@@ -4,6 +4,7 @@ import { asyncHandler } from "@/utils/asyncHandler";
 import { validateBody, validateParams, validateQuery } from "@/middlewares/validate";
 import { ORG_ENTITIES } from "@/modules/root/root.organization.types";
 import {
+  createCampusSchema,
   createCollegeSchema,
   createDepartmentSchema,
   createOfficeSchema,
@@ -11,6 +12,7 @@ import {
   listOrganizationQuerySchema,
   orgIdParamSchema,
   rollbackOrganizationSchema,
+  updateCampusSchema,
   updateCollegeSchema,
   updateDepartmentSchema,
   updateOfficeSchema,
@@ -60,6 +62,7 @@ organizationRouter.get(
 );
 
 const ENTITY_ROUTE_DEFS = [
+  { cfg: ORG_ENTITIES.campus, createSchema: createCampusSchema, updateSchema: updateCampusSchema },
   { cfg: ORG_ENTITIES.college, createSchema: createCollegeSchema, updateSchema: updateCollegeSchema },
   { cfg: ORG_ENTITIES.department, createSchema: createDepartmentSchema, updateSchema: updateDepartmentSchema },
   { cfg: ORG_ENTITIES.office, createSchema: createOfficeSchema, updateSchema: updateOfficeSchema },

@@ -27,12 +27,15 @@ export const NOTIFICATION_TYPE_VALUES = [
   "AACCUP_SUBMISSION_REJECTED",
   "AACCUP_SUBMISSION_RETURNED",
   "AACCUP_SUBMISSION_PENDING_REVIEW",
+  "AACCUP_SUBMISSION_WITHDRAWN",
   "AACCUP_TASK_ASSIGNED",
+  "AACCUP_TASK_DEADLINE",
   "RECYCLE_BIN_CLEANUP",
   "STORAGE_WARNING",
   "PASSWORD_RESET",
   "ROLE_CHANGED",
   "SYSTEM_ANNOUNCEMENT",
+  "FOLDER_SHARED_ACCESS",
 ] as const;
 
 export interface NotificationEmailDefaults {
@@ -146,12 +149,36 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultTitle: "Submission pending review",
     defaultMessage: "A new AACCUP document submission is awaiting review.",
     defaultPriority: "MEDIUM",
+    email: {
+      subject: "URS-DMS — Submission pending review",
+      body: "<p>A submission is awaiting review in URS-DMS.</p>",
+    },
+  },
+  AACCUP_SUBMISSION_WITHDRAWN: {
+    type: "AACCUP_SUBMISSION_WITHDRAWN",
+    defaultTitle: "Submission withdrawn",
+    defaultMessage: "A submitted document was withdrawn by its submitter.",
+    defaultPriority: "HIGH",
+    email: {
+      subject: "URS-DMS — Submission withdrawn",
+      body: "<p>A submitted document was withdrawn and is no longer active.</p>",
+    },
   },
   AACCUP_TASK_ASSIGNED: {
     type: "AACCUP_TASK_ASSIGNED",
     defaultTitle: "New task assigned",
     defaultMessage: "You have been assigned a new AACCUP task.",
     defaultPriority: "MEDIUM",
+  },
+  AACCUP_TASK_DEADLINE: {
+    type: "AACCUP_TASK_DEADLINE",
+    defaultTitle: "Task deadline approaching",
+    defaultMessage: "An assigned task is approaching its deadline.",
+    defaultPriority: "HIGH",
+    email: {
+      subject: "URS-DMS — Task deadline approaching",
+      body: "<p>An assigned task is approaching its deadline.</p>",
+    },
   },
   RECYCLE_BIN_CLEANUP: {
     type: "RECYCLE_BIN_CLEANUP",
@@ -186,5 +213,11 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultTitle: "System announcement",
     defaultMessage: "An announcement from the system administrator.",
     defaultPriority: "HIGH",
+  },
+  FOLDER_SHARED_ACCESS: {
+    type: "FOLDER_SHARED_ACCESS",
+    defaultTitle: "Folder shared with you",
+    defaultMessage: "A folder has been shared with you in the document repository.",
+    defaultPriority: "MEDIUM",
   },
 };

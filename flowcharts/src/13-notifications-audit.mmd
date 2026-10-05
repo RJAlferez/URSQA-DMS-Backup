@@ -1,0 +1,28 @@
+flowchart TD
+    A(["Any business mutation executes"]) --> B["Detect actor + entity + action"]
+    B --> C["writeAudit(module/audit)<br/>exactly ONE entry per mutation"]
+    C --> D["Insert AuditLog row<br/>(userId, entity, entityId,<br/>action, old/new value, ip, ua)"]
+    D --> E{"Audit write fails?"}
+    E -- No --> F(["Audit trail appended"])
+    E -- Yes --> G["Never fails the business operation<br/>(fire and forget)"]
+
+    F --> H{"Audit retention"}
+    H -- Archive --> I["AuditArchive - old logs rolled<br/>into archive"]
+    H -- Review --> J["AuditReview - flagged entries<br/>reviewed by admins"]
+
+    A --> K["Concurrently: notify?"]
+    K --> L{"Notification type exists in<br/>Prisma enum AND NOTIFICATION_EVENTS?"}
+    L -- No --> M["Silently skipped (catalog guard)"]
+    L -- Yes --> N["notifyUser(userId, type, input)<br/>or notifyUsers(ids, ...)"]
+    N --> O["Insert Notification row<br/>(type, priority, payload)"]
+    O --> P["Real-time push / polling to user"]
+    P --> Q(["Notification center shows badge;<br/>read/unread tracked"])
+
+    subgraph EVENTS["Common events"]
+        E1["DOCUMENT_CREATED / VERSION_ADDED"]
+        E2["AACCUP_SUBMISSION_PENDING_REVIEW"]
+        E3["AACCUP_TASK_ASSIGNED / COMPLETED"]
+        E4["REQUEST_PENDING / APPROVED / FULFILLED"]
+        E5["AUTH events (login/logout/password)"]
+    end
+    EVENTS --> L

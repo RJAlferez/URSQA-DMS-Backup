@@ -1,6 +1,7 @@
 import { apiGetPage, apiPost, apiPatch, apiDelete, apiGet, API_BASE, getAccessToken, type ApiErrorEnvelope } from "@/lib/http"
+import { sha256 as sha256Buffer } from "@/lib/sha256"
 
-export type AreaSet = "AACCUP" | "ISO" | "CERT"
+export type AreaSet = "AACCUP" | "ISO"
 
 export interface OnlineAaccupArea {
   id: string
@@ -52,7 +53,7 @@ export interface OnlineAaccupSubmission {
   requirementTitle: string
   documentId: string
   documentTitle: string
-  status: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION"
+  status: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | "WITHDRAWN"
   remarks: string | null
   isCurrent: boolean
   submittedAt: string
@@ -164,7 +165,7 @@ export interface OnlineSubmissionListItem {
   taskStatus: "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | null
   documentId: string
   documentTitle: string
-  status: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION"
+  status: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | "WITHDRAWN"
   remarks: string | null
   submittedById: string | null
   submittedByName: string | null
@@ -240,6 +241,17 @@ export async function reviewOnlineSubmission(
   return apiPost<OnlineAaccupSubmission>(
     `/aaccup/submissions/${encodeURIComponent(id)}/review`,
     input,
+  )
+}
+
+export async function unsubmitOnlineSubmission(
+  id: string,
+  reason?: string,
+): Promise<OnlineAaccupSubmission> {
+  if (!id) throw new Error("Missing submission ID")
+  return apiPost<OnlineAaccupSubmission>(
+    `/aaccup/submissions/${encodeURIComponent(id)}/unsubmit`,
+    reason?.trim() ? { reason: reason.trim() } : {},
   )
 }
 
@@ -455,8 +467,7 @@ function inferredMimeType(file: File): string {
 }
 
 async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+  return sha256Buffer(await file.arrayBuffer())
 }
 
 export interface RequirementUploadInput {

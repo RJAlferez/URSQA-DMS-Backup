@@ -1,0 +1,30 @@
+# URS-DMS production host override.
+# This changes host bindings only; named volumes and database contents are
+# preserved. Use with docker-compose.yml, never with `down -v`.
+services:
+  postgres:
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  pgadmin:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  server:
+    environment:
+      CLIENT_URL: http://localhost,http://127.0.0.1,http://192.168.8.36,https://urs-dms.online
+      PUBLIC_APP_URL: https://urs-dms.online
+      COOKIE_DOMAIN: ""
+      # Pages calls the HTTPS Cloudflare tunnel cross-origin. These settings
+      # allow only the HTTPS deployment to use the refresh cookie.
+      COOKIE_SECURE: "true"
+      COOKIE_SAME_SITE: none
+    ports: !override
+      # Docker Desktop retained the old published 4000 relay after the
+      # development container was replaced. Keep the API host-only while using
+      # the next local port; Caddy is the only public entry point.
+      - "127.0.0.1:4001:4000"

@@ -190,4 +190,10 @@ export { PreviewHeader } from "./PreviewHeader"
 export { PreviewSidebar } from "./PreviewSidebar"
 export { PreviewInfoPanel } from "./PreviewInfoPanel"
 export { FilePreviewRenderer } from "./FilePreviewRenderer"
-export * from "./types"
+export type {
+  DocumentFile,
+  PreviewFileActivity,
+  PreviewFileVersion,
+  PreviewDownloadResult,
+  ServerDocumentVersion,
+} from "./types"

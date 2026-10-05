@@ -92,12 +92,8 @@ const SET_TITLES: Record<AreaSet, { title: string; description: string }> = {
     description: "Manage accreditation areas, submissions, and compliance tracking",
   },
   ISO: {
-    title: "ISO 21001 Management",
+    title: "ISO 21001:2025",
     description: "Manage ISO accreditation areas, submissions, and compliance tracking",
-  },
-  CERT: {
-    title: "Certification Management",
-    description: "Manage certification areas, submissions, and compliance tracking",
   },
 }
 
@@ -309,7 +305,7 @@ export default function AACCUPManagement({ areaSet = "AACCUP", navigation }: AAC
 
   return (
     <>
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div className="content-padding">
         <PageHeader
           title={setMeta.title}
           description={setMeta.description}
@@ -331,7 +327,7 @@ export default function AACCUPManagement({ areaSet = "AACCUP", navigation }: AAC
 
           {navigation && <div className="mb-6 lg:mb-8">{navigation}</div>}
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 mb-6 lg:mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 responsive-gap mb-6 lg:mb-8">
             <StatCard
               title="Total Submissions"
               value={totalSubmissions.toString()}
@@ -363,8 +359,8 @@ export default function AACCUPManagement({ areaSet = "AACCUP", navigation }: AAC
           </div>
 
           <Card className="border-border/70 shadow-soft mb-6">
-            <CardContent className="p-5 md:p-6">
-              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+            <CardContent className="p-0">
+              <div className="toolbar-padding flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div className="flex-1">
                   <div className="relative max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -639,7 +635,7 @@ export default function AACCUPManagement({ areaSet = "AACCUP", navigation }: AAC
           setIsAddAreaModalOpen(open)
           if (!open) setEditingArea(null)
         }}
-        areaSet={areaSet.toLowerCase() as "aaccup" | "iso" | "cert"}
+        areaSet={areaSet.toLowerCase() as "aaccup" | "iso"}
         area={editingArea}
         onSuccess={() => {
           setEditingArea(null)

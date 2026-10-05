@@ -11,7 +11,7 @@ import { RepositoryExplorer } from "@/components/repository/RepositoryExplorer"
 
 export default function DocumentRepository() {
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="My Documents"
         description="Manage and organize your personal documents."

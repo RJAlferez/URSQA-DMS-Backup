@@ -32,9 +32,10 @@ export interface Actor {
   userAgent?: string;
 }
 
-function assertPermission(actor: Actor, code: string, message: string): void {
+async function assertPermission(actor: Actor, code: string, message: string): Promise<void> {
   if (!actor.permissions.includes(code)) {
-    void writeAudit({
+    // Awaited so the DENIED row is persisted before the 403 propagates.
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "repository",
@@ -60,7 +61,7 @@ export async function assertRepositoryAccess(
   if (actor.id === ownerId) return repositoryId;
   if (await repo.hasActiveEmergencyAccess(actor.id, ownerId)) {
     await writeAudit({
-      action: AUDIT_ACTIONS.REPOSITORY_EMERGENCY_GRANTED,
+      action: AUDIT_ACTIONS.REPOSITORY_EMERGENCY_ACCESS_USED,
       userId: actor.id,
       entity: "repository",
       entityId: repositoryId,
@@ -70,7 +71,7 @@ export async function assertRepositoryAccess(
     });
     return repositoryId;
   }
-  void writeAudit({
+  await writeAudit({
     action: AUDIT_ACTIONS.ACCESS_DENIED,
     userId: actor.id,
     entity: "repository",
@@ -101,7 +102,7 @@ export async function getMyRepository(actor: Actor): Promise<RepositoryView> {
 }
 
 export async function backfill(actor: Actor): Promise<{ provisioned: number }> {
-  assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
+  await assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
   const provisioned = await repo.backfillRepositories();
   return { provisioned };
 }
@@ -113,7 +114,7 @@ export async function grantEmergencyAccess(
   input: GrantEmergencyAccessInput,
   actor: Actor,
 ): Promise<{ id: string; expiresAt: string }> {
-  assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
+  await assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
 
   const target = await prisma.user.findFirst({
     where: { id: ownerId, deletedAt: null },
@@ -126,7 +127,7 @@ export async function grantEmergencyAccess(
   });
   if (!admin) throw new NotFoundError("Admin user not found");
   if (input.adminId === ownerId) {
-    void writeAudit({
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "repository",
@@ -175,7 +176,7 @@ export async function revokeEmergencyAccess(
   _input: RevokeEmergencyAccessInput,
   actor: Actor,
 ): Promise<{ id: string }> {
-  assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
+  await assertPermission(actor, "repository.emergency_access", "Missing permission: repository.emergency_access");
   const revoked = await repo.revokeEmergencyAccess(id);
   if (!revoked) throw new NotFoundError("Emergency access grant not found");
 
@@ -211,7 +212,10 @@ export async function listEmergencyAccess(actor: Actor): Promise<EmergencyAccess
 }
 
 export async function listRepositories(actor: Actor, ownerId: string): Promise<Array<{ id: string }>> {
-  assertRepositoryAccess(actor, ownerId);
+  // MUST be awaited: without it the ownership denial rejects as an unhandled
+  // promise, the request continues and returns 200 with another user's
+  // repository list (IDOR) while the audit row claims DENIED.
+  await assertRepositoryAccess(actor, ownerId);
   const rows = await repo.listRepositoriesForOwner(ownerId);
   return rows.map((row) => ({ id: row.id }));
 }

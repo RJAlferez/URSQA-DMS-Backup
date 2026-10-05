@@ -51,7 +51,7 @@ import type { Document } from "@/types/domain"
 // =============================================================================
 // UserAccreditationView — shared accreditation surface for the user portal
 // -----------------------------------------------------------------------------
-// Renders one accreditation set (AACCUP / ISO / Certification) with its own
+// Renders one accreditation set (AACCUP / ISO) with its own
 // record set — areas, requirements and the user's own submissions are scoped
 // by `areaSet`, matching the admin-side tab separation exactly.
 // =============================================================================
@@ -62,12 +62,8 @@ const SET_META: Record<AreaSet, { title: string; description: string }> = {
     description: "Manage accreditation areas, submissions, and compliance tracking.",
   },
   ISO: {
-    title: "ISO 21001 Management",
+    title: "ISO 21001:2025",
     description: "Manage ISO accreditation areas, submissions, and compliance tracking.",
-  },
-  CERT: {
-    title: "Certification Management",
-    description: "Manage certification areas, submissions, and compliance tracking.",
   },
 }
 
@@ -252,7 +248,7 @@ export function UserAccreditationView({ areaSet, navigation }: { areaSet: AreaSe
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title={meta.title}
         description={meta.description}
@@ -333,7 +329,7 @@ export function UserAccreditationView({ areaSet, navigation }: { areaSet: AreaSe
           <CardContent className="space-y-2">
             {submissions.length === 0 ? <p className="py-6 text-center text-[12px] text-slate-500">No submissions for this area.</p>
               : submissions.slice(0, 8).map((submission) => <div key={submission.id} className="rounded-lg border border-border/70 p-3"><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium text-navy-900">{submission.documentTitle}</p><p className="mt-1 truncate text-[10px] text-slate-500">{submission.requirementTitle}</p><div className="mt-2 flex items-center justify-between">{statusBadge(submission.status)}<span className="text-[10px] text-slate-400">{new Date(submission.submittedAt).toLocaleDateString()}</span></div></div></div></div>)}
-            {areaSet !== "CERT" && <Button type="button" variant="outline" className="mt-2 w-full" onClick={() => navigate(`/user/submissions?areaSet=${areaSet}`)}>My Submissions</Button>}
+            <Button type="button" variant="outline" className="mt-2 w-full" onClick={() => navigate(`/user/submissions?areaSet=${areaSet}`)}>My Submissions</Button>
           </CardContent>
         </Card>
       </div>

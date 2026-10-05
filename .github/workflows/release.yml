@@ -1,0 +1,75 @@
+# =============================================================
+# URS-DMS Release pipeline
+# On push to `main`: build both production images as a deployment gate, then
+# optionally call the Dokploy webhook. Dokploy is configured for Git builds,
+# so it owns image publication and deployment.
+# =============================================================
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Validate production images
+    runs-on: ubuntu-latest
+    env:
+      DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Build frontend bundle
+        env:
+          VITE_API_BASE: /api/v1
+        run: |
+          npm ci --prefix client
+          npm --prefix client run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            VITE_API_BASE=/api/v1
+          push: false
+          tags: urs-dms/frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build server image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: false
+          tags: urs-dms/server:${{ github.sha }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Trigger Dokploy redeploy
+        if: github.repository == 'ikykchrist/URS-DMS' && env.DOKPLOY_WEBHOOK_URL != ''
+        run: |
+          curl -fsS -X POST "$DOKPLOY_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -o /dev/null -w "Dokploy redeploy triggered (HTTP %{http_code})\n"

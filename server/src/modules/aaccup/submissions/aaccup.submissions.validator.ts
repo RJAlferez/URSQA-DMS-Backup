@@ -15,7 +15,7 @@ export const listSubmissionsQuerySchema = z.object({
   documentId: z.string().uuid().optional(),
   submittedById: z.string().uuid().optional(),
   reviewedById: z.string().uuid().optional(),
-  status: z.enum(["PENDING", "APPROVED", "REJECTED", "NEEDS_REVISION"]).optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED", "NEEDS_REVISION", "WITHDRAWN"]).optional(),
   isCurrent: z.enum(["true", "false"]).optional(),
   q: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -47,6 +47,11 @@ export const reviewSubmissionSchema = z.object({
   remarks: z.string().trim().max(2000).optional(),
 });
 export type ReviewSubmissionInput = z.infer<typeof reviewSubmissionSchema>;
+
+export const unsubmitSubmissionSchema = z.object({
+  reason: z.string().trim().max(2000).optional(),
+});
+export type UnsubmitSubmissionInput = z.infer<typeof unsubmitSubmissionSchema>;
 
 // Admin-only approved-package export. `areaIds` may arrive as a repeated query
 // param (?areaIds=a&areaIds=b) or a comma-separated value (?areaIds=a,b); both

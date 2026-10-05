@@ -20,6 +20,51 @@ import { BadRequestError, UnauthorizedError } from "@/utils/errors";
 
 export const filesRouter: Router = Router();
 
+// Only these MIME types may be rendered inline (preview) in a browser.
+// Everything else is forced to an octet-stream attachment so a crafted upload
+// (text/html, image/svg+xml, application/xhtml+xml, …) can never execute
+// script on the API origin via the preview iframe.
+const SAFE_INLINE_TYPES = new Set<string>([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
+  "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/ogg",
+  "video/quicktime",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/wav",
+  "audio/webm",
+  "text/plain",
+  "text/csv",
+]);
+
+// Active-content types are stored as opaque bytes regardless of what the
+// client declared, keeping MinIO metadata from misrepresenting the payload.
+const ACTIVE_CONTENT_TYPES = new Set<string>([
+  "text/html",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "application/xml",
+  "text/xml",
+  "application/javascript",
+  "text/javascript",
+  "application/ecmascript",
+  "text/ecmascript",
+]);
+
+function normalizeContentType(raw: string | undefined): string {
+  const value = (raw ?? "").split(";")[0]!.trim().toLowerCase();
+  return value || "application/octet-stream";
+}
+
 function extractToken(query: unknown): string {
   const token = (query as { token?: string }).token;
   if (!token) throw new UnauthorizedError("Missing file token");
@@ -41,7 +86,8 @@ filesRouter.put(
     if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
       throw new BadRequestError("Content-Length is required");
     }
-    const mimeType = String(req.headers["content-type"] ?? "application/octet-stream");
+    const declared = normalizeContentType(req.headers["content-type"] as string | undefined);
+    const mimeType = ACTIVE_CONTENT_TYPES.has(declared) ? "application/octet-stream" : declared;
 
     await putObject(payload.k, req, sizeBytes, mimeType);
     res.status(204).end();
@@ -63,8 +109,13 @@ filesRouter.get(
     const stream = await getObjectStream(payload.k);
 
     const filename = payload.k.split("/").pop() ?? "file";
-    const disposition = payload.i === 1 ? "inline" : "attachment";
-    res.setHeader("Content-Type", stat.contentType);
+    const declared = normalizeContentType(stat.contentType);
+    const inlineRequested = payload.i === 1;
+    const inlineSafe = inlineRequested && SAFE_INLINE_TYPES.has(declared);
+    const disposition = inlineSafe ? "inline" : "attachment";
+    const servedType = inlineRequested && !inlineSafe ? "application/octet-stream" : declared;
+    res.setHeader("Content-Type", servedType);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Length", String(stat.size));
     res.setHeader(
       "Content-Disposition",

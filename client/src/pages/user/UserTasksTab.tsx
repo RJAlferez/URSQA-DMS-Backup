@@ -100,7 +100,7 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
   }, [highlightTaskId, visibleTasks.length])
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="My Tasks"
         description="Tasks assigned to you or your department — submit evidence and track progress."

@@ -26,7 +26,7 @@ router.post("/archive", authenticate, requireRole("ROOT"), validateQuery(archive
 router.post("/purge", authenticate, requireRole("ROOT"), validateQuery(purgeAuditQuerySchema), ctrl.purgeAuditHandler);
 
 // Phase 2 — Summary, presets, login groups, review
-router.get("/summary", authenticate, validateQuery(summaryQuerySchema), ctrl.getSummaryHandler);
+router.get("/summary", authenticate, requirePermission("audit.read"), validateQuery(summaryQuerySchema), ctrl.getSummaryHandler);
 router.get("/presets", authenticate, ctrl.getPresetsHandler);
 router.get("/login-groups", authenticate, requirePermission("audit.read"), validateQuery(loginGroupsQuerySchema), ctrl.getLoginGroupsHandler);
 router.get("/:id/review", authenticate, requireRole("ROOT"), ctrl.getReviewHandler);
@@ -47,8 +47,10 @@ router.get("/", authenticate, requirePermission("audit.read"), validateQuery(lis
 // Detail
 router.get("/:id", authenticate, requirePermission("audit.read"), ctrl.getAuditHandler);
 
-// Clear
-router.delete("/", authenticate, requirePermission("audit.export"), ctrl.clearAuditHandler);
+// Clear — destructive, ROOT-only. Wiping the entire audit trail must not be
+// reachable with the read/export permission an ADMINISTRATOR holds; the
+// ROOT-gated /audit/purge path is the sanctioned archive-then-delete flow.
+router.delete("/", authenticate, requireRole("ROOT"), ctrl.clearAuditHandler);
 
 export { router as auditRouter };
 export default router;

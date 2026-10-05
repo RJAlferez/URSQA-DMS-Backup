@@ -39,7 +39,9 @@ export function PreviewHeader({ file, onClose }: PreviewHeaderProps) {
         `/documents/${encodeURIComponent(file.id)}/download`,
       )
       window.open(result.url, "_blank", "noopener,noreferrer")
-    } catch {}
+    } catch {
+      // The preview remains open when the download request fails.
+    }
   }
 
   return (

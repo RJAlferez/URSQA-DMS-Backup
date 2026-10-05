@@ -80,18 +80,6 @@ body {
 
 @layer utilities {
   .text-balance { text-wrap: balance; }
-  .sidebar-margin { margin-left: 260px; }
-  .sidebar-margin-collapsed { margin-left: 72px; }
-
-  @media (min-width: 1536px) {
-    .sidebar-margin { margin-left: 280px; }
-    .sidebar-margin-collapsed { margin-left: 80px; }
-  }
-
-  @media (max-width: 1024px) {
-    .sidebar-margin, .sidebar-margin-collapsed { margin-left: 0; }
-  }
-
   .hidden-mobile { @media (max-width: 640px) { display: none; } }
   .mobile-only { @media (min-width: 641px) { display: none; } }
   .table-scroll-wrapper { @apply overflow-x-auto; }
@@ -100,29 +88,243 @@ body {
   @media (min-width: 768px) { .table-cell-truncate { @apply max-w-[200px]; } }
   @media (min-width: 1024px) { .table-cell-truncate { @apply max-w-[220px]; } }
 
-  .responsive-gap { @apply gap-4; }
-  @media (min-width: 640px) { .responsive-gap { @apply gap-5; } }
+  /* Canonical spacing scale — prefer these over ad-hoc p/gap utilities.
+     Note: do not pass .card-responsive into CardContent/CardHeader via cn() —
+     use explicit p-5 md:p:6 so tailwind-merge can override defaults. */
+  .content-padding { @apply p-4 sm:p-6 lg:p-8; }
+  .responsive-gap { @apply gap-3 sm:gap-4 lg:gap-5; }
+  .section-stack { @apply space-y-6; }
+  .card-responsive { @apply p-5 md:p-6; }
+  .toolbar-padding { @apply p-4; }
+  .table-footer {
+    @apply px-4 py-3 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3;
+  }
+  .navbar-responsive { @apply px-4 md:px-6; }
 
   .dialog-responsive { @apply w-full max-w-lg p-4; }
   @media (max-width: 640px) { .dialog-responsive { @apply max-w-[calc(100%-1rem)] p-3; } }
 
-  .card-responsive { @apply p-4; }
-  @media (min-width: 768px) { .card-responsive { @apply p-5; } }
-
-  .navbar-responsive { @apply px-4; }
-  @media (min-width: 768px) { .navbar-responsive { @apply px-6; } }
-
-  .content-padding { @apply p-4; }
-  @media (min-width: 640px) { .content-padding { @apply p-6; } }
-  @media (min-width: 1024px) { .content-padding { @apply p-8; } }
-
   .sidebar-transition { transition: margin-left 0.2s ease-in-out; }
   .text-responsive { @apply text-sm; }
   @media (min-width: 768px) { .text-responsive { @apply text-base; } }
+
+  /* Input height scale — standardize form inputs to h-10 (40px) for desktop,
+     h-11 (44px) for enhanced touch target, h-9 (36px) for compact forms.
+     Apply via className="input-h-10" etc. on <input>, <select>, <textarea>. */
+  .input-h-10 { height: 2.5rem; }
+  .input-h-11 { height: 2.75rem; }
+  .input-h-9 { height: 2.25rem; }
 }
 
 @keyframes skeleton-shimmer {
-  100% { transform: translateX(100%); }
+  0% { transform: translateX(-120%); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+@keyframes urs-spinner {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes urs-loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+/* ===================================================================
+   MOTION SYSTEM
+   -------------------------------------------------------------------
+   A quiet, global layer for existing pages and shared primitives. Motion
+   communicates hierarchy and feedback without changing page structure.
+   All non-essential movement is disabled for reduced-motion preferences.
+   =================================================================== */
+
+@keyframes urs-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes urs-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes urs-scale-in {
+  from { opacity: 0; scale: 0.98; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes urs-dialog-in {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 0.75rem)) scale(0.985); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes urs-dialog-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, calc(-50% + 0.35rem)) scale(0.99); }
+}
+
+@keyframes urs-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes urs-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes urs-soft-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
+@keyframes urs-auth-panel-in {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes urs-auth-card-in {
+  from { opacity: 0; transform: translate3d(18px, 10px, 0) scale(0.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #root {
+    animation: urs-fade-in 260ms ease-out both;
+  }
+
+  /* Page components mount directly inside the application main regions. */
+  main > * {
+    animation: urs-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Shared cards gain a small entrance and clear, restrained affordance. */
+  .rounded-card {
+    animation: urs-fade-up 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  }
+
+  .rounded-card[class*="cursor-pointer"]:hover,
+  button.rounded-card:hover,
+  a.rounded-card:hover {
+    transform: translateY(-2px);
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [role="button"] {
+    transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:active {
+    transform: scale(0.985);
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    transform: translateY(-1px);
+  }
+
+  /* Data views enter in a scan-friendly sequence when their rows mount. */
+  tbody > tr {
+    animation: urs-fade-up 220ms ease-out both;
+  }
+
+  tbody > tr:nth-child(2) { animation-delay: 20ms; }
+  tbody > tr:nth-child(3) { animation-delay: 40ms; }
+  tbody > tr:nth-child(4) { animation-delay: 60ms; }
+  tbody > tr:nth-child(5) { animation-delay: 80ms; }
+  tbody > tr:nth-child(n + 6) { animation-delay: 100ms; }
+
+  .urs-dialog-surface[data-state="open"] {
+    animation: urs-dialog-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .urs-dialog-surface[data-state="closed"] {
+    animation: urs-dialog-out 160ms ease-in both;
+  }
+
+  .urs-dialog-overlay[data-state="open"] {
+    animation: urs-overlay-in 180ms ease-out both;
+  }
+
+  .urs-dialog-overlay[data-state="closed"] {
+    animation: urs-overlay-out 140ms ease-in both;
+  }
+
+  /* Menus and listboxes retain a lighter open response. */
+  [data-state="open"][role="menu"],
+  [data-state="open"][role="menu"],
+  [data-state="open"][role="listbox"] {
+    animation: urs-scale-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  [data-state="open"].fixed.inset-0 {
+    animation: urs-fade-in 160ms ease-out both;
+  }
+
+  [aria-busy="true"] {
+    animation: urs-loading-pulse 1.8s ease-in-out infinite;
+  }
+
+  .animate-spin {
+    animation: urs-spinner 1.15s linear infinite;
+  }
+
+  .animate-pulse {
+    animation: urs-loading-pulse 1.8s ease-in-out infinite;
+  }
+
+  /* Login gets a slightly more deliberate first impression: the branded
+     context settles first, then the sign-in card and its form sequence. */
+  .login-page > :first-child {
+    animation: urs-auth-panel-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .login-page > :first-child h2 {
+    animation: urs-fade-up 440ms 100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .login-page > :first-child h2 + p,
+  .login-page > :first-child svg,
+  .login-page > :first-child > div:last-child {
+    animation: urs-fade-up 420ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .login-page > :last-child > div > div {
+    animation: urs-auth-card-in 440ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .login-page form > * {
+    animation: urs-fade-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .login-page form > :nth-child(1) { animation-delay: 180ms; }
+  .login-page form > :nth-child(2) { animation-delay: 220ms; }
+  .login-page form > :nth-child(3) { animation-delay: 260ms; }
+  .login-page form > :nth-child(4) { animation-delay: 300ms; }
+  .login-page form > :nth-child(5) { animation-delay: 340ms; }
+  .login-page form > :nth-child(6) { animation-delay: 380ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Keep the admin and user portals on the same calm, rounded surface system.
@@ -231,9 +433,9 @@ body {
 .dark .text-gray-800 { color: #E2E8F0; }
 .dark .text-gray-700 { color: #CBD5E1; }
 .dark .text-gray-600 { color: #94A3B8; }
-.dark .text-gray-500 { color: #64748B; }
-.dark .text-gray-400 { color: #475569; }
-.dark .text-gray-300 { color: #334155; }
+.dark .text-gray-500 { color: #94A3B8; }
+.dark .text-gray-400 { color: #94A3B8; }
+.dark .text-gray-300 { color: #CBD5E1; }
 
 .dark .text-slate-900,
 .dark .text-slate-800,
@@ -243,7 +445,7 @@ body {
 .dark .text-slate-400 { color: #64748B; }
 
 .dark .text-black { color: #F1F5F9; }
-.dark .text-white { color: #0F172A; }
+.dark .text-white { color: #F8FAFC; }
 
 /* ── Borders ── */
 .dark .border-gray-50 { border-color: #111827; }
@@ -264,6 +466,7 @@ body {
 .dark .border-r-gray-200 { border-right-color: #1E293B; }
 .dark .border-l-gray-200 { border-left-color: #1E293B; }
 
+.border-border { border-color: #E4E9F2; }
 .dark .border-border,
 .dark .border-border\/60,
 .dark .border-border\/70,

@@ -126,7 +126,7 @@ export default function UserBrowseArchive({ onBack, onSuccess }: UserBrowseArchi
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Browse Archive"
         description={departmentName ? `Files from the ${departmentName} archive — preview and download are disabled while browsing.` : "Files from your department's archive"}

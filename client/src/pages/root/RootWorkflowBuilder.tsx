@@ -768,7 +768,7 @@ export default function RootWorkflowBuilder() {
     detail?.transitions.filter((transition) => transition.deletedAt === null) ?? [];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Workflow Builder"
         description="Author versioned, publishable approval flows and assign them to scopes. Published workflows control submissions, requests, and documents."

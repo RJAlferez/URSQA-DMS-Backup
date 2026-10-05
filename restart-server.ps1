@@ -42,14 +42,8 @@ if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyCon
 # 3. Set the runtime env overrides before launching (process-scoped).
 $env:DATABASE_URL = "postgresql://urs_user:urs_password@localhost:5432/urs_dms?schema=public"
 $env:MINIO_ENDPOINT = "localhost"
-# Sprint 8.9 — Email SMTP config (Gmail)
-$env:EMAIL_PROVIDER = "smtp"
-$env:SMTP_HOST = "smtp.gmail.com"
-$env:SMTP_PORT = "587"
-$env:SMTP_SECURE = "false"
-$env:SMTP_USER = "christbaldado@gmail.com"
-$env:SMTP_PASS = "hkja unju xsmp eqgu"
-$env:SMTP_FROM = "christbaldado@gmail.com"
+# SMTP credentials are read from .env (EMAIL_PROVIDER=console by default).
+# Never hardcode SMTP_PASS in this file - it would be committed to the repo.
 
 # 4. Start the server detached with output redirected to log files.
 Write-Host "Starting API server (detached) ..."

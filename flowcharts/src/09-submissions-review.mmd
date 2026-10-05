@@ -1,0 +1,24 @@
+flowchart TD
+    A(["Department user in area details"]) --> B["Open TaskSubmitDialog / Submit<br/>pick requirement + attach file"]
+    B --> C["Reuse upload pipeline<br/>(document create/version -><br/>presign PUT -> verify)"]
+    C --> D["Create AaccupSubmission<br/>status = PENDING<br/>link taskId (optional)"]
+    D --> E["Notify reviewers:<br/>AACCUP_SUBMISSION_PENDING_REVIEW"]
+    E --> F(["Submission appears in<br/>Submissions table (reviewers)"])
+
+    F --> G{"Reviewer action"}
+    G -- Approve --> H["POST approve<br/>status APPROVED"]
+    G -- Return for revision --> I["POST return (NEEDS_REVISION)<br/>return reason required"]
+    G -- Reject --> J["POST reject<br/>status REJECTED<br/>reason required"]
+    G -- Bulk archive / delete --> K["Bulk Archive or Delete"]
+
+    I --> L(["Requester notified +<br/>sees Needs Revision"])
+    L --> M["Requester re-submits (new version)"]
+    M --> N["Submission back to PENDING"]
+    N --> F
+
+    H --> O(["Approved - auto-filed /<br/>counted in analytics"])
+    J --> P(["Rejected - closed,<br/>requester notified"])
+
+    O --> Q{"Optional bulk ops"}
+    Q -- Archive --> R["Archived (not deleted)"]
+    Q -- Delete --> S["Permanent delete with audit"]

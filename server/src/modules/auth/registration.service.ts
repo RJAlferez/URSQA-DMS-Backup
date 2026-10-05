@@ -62,11 +62,13 @@ async function getInvite(token: string) {
 }
 
 export async function getRegistrationOptions() {
-  const [colleges, departments] = await Promise.all([
-    prisma.college.findMany({ where: { deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { displayOrder: "asc" } }),
-    prisma.department.findMany({ where: { deletedAt: null, collegeId: { not: null } }, select: { id: true, name: true, code: true, collegeId: true }, orderBy: { displayOrder: "asc" } }),
+  const [campuses, colleges, programs, offices] = await Promise.all([
+    prisma.campus.findMany({ where: { deletedAt: null }, select: { id: true, name: true, code: true }, orderBy: { displayOrder: "asc" } }),
+    prisma.college.findMany({ where: { deletedAt: null }, select: { id: true, name: true, code: true, campusId: true }, orderBy: { displayOrder: "asc" } }),
+    prisma.program.findMany({ where: { deletedAt: null }, select: { id: true, name: true, code: true, campusId: true, collegeId: true }, orderBy: { displayOrder: "asc" } }),
+    prisma.office.findMany({ where: { deletedAt: null }, select: { id: true, name: true, code: true, campusId: true, collegeId: true, departmentId: true }, orderBy: { displayOrder: "asc" } }),
   ]);
-  return { colleges, departments };
+  return { campuses, colleges, programs, offices };
 }
 
 export async function validateRegistrationToken(token: string): Promise<{ email: string; expiresAt: string }> {
@@ -78,17 +80,65 @@ export async function register(input: RegistrationInput, ipAddress: string | nul
   const invite = await getInvite(input.token);
   if (invite.email !== input.email.trim().toLowerCase()) throw new TokenInvalidError("This invitation belongs to a different email address");
 
-  const [emailTaken, employeeTaken, department] = await Promise.all([
+  const [emailTaken, employeeTaken, college, program, office] = await Promise.all([
     prisma.user.findUnique({ where: { email: invite.email }, select: { id: true } }),
     prisma.user.findUnique({ where: { employeeId: input.employeeId }, select: { id: true } }),
-    prisma.department.findFirst({ where: { id: input.departmentId, collegeId: input.collegeId, deletedAt: null }, select: { id: true } }),
+    input.collegeId
+      ? prisma.college.findFirst({ where: { id: input.collegeId, deletedAt: null }, select: { id: true, campusId: true } })
+      : Promise.resolve(null),
+    input.programId
+      ? prisma.program.findFirst({
+          where: { id: input.programId, deletedAt: null },
+          select: { id: true, campusId: true, collegeId: true },
+        })
+      : Promise.resolve(null),
+    input.officeId
+      ? prisma.office.findFirst({
+          where: { id: input.officeId, deletedAt: null },
+          select: {
+            id: true,
+            campusId: true,
+            collegeId: true,
+            departmentId: true,
+            college: { select: { campusId: true } },
+            department: { select: { campusId: true } },
+          },
+        })
+      : Promise.resolve(null),
   ]);
   if (emailTaken) throw new ConflictError("Email already has an account");
   if (employeeTaken) throw new ConflictError("Employee or student ID is already in use");
-  if (!department) throw new NotFoundError("Selected department was not found in the selected campus");
+  if (input.collegeId && !college) throw new NotFoundError("Selected college was not found");
+  if (college && college.campusId !== input.campusId) {
+    throw new NotFoundError("Selected college does not belong to the selected campus");
+  }
+  if (input.programId && !program) throw new NotFoundError("Selected program was not found");
+  if (input.programId && program) {
+    if (input.collegeId && program.collegeId !== input.collegeId) {
+      throw new NotFoundError("Selected program does not belong to the selected college");
+    }
+    if (program.campusId !== input.campusId) {
+      throw new NotFoundError("Selected program does not belong to the selected campus");
+    }
+  }
+  if (input.officeId && !office) throw new NotFoundError("Selected office was not found");
+  if (office) {
+    // An office belongs to a campus directly, or through its college/department.
+    const officeCampusId = office.campusId ?? office.college?.campusId ?? office.department?.campusId ?? null;
+    if (!officeCampusId) {
+      throw new NotFoundError("Selected office is not assigned to a campus");
+    }
+    if (officeCampusId !== input.campusId) {
+      throw new NotFoundError("Selected office does not belong to the selected campus");
+    }
+  }
 
-  const role = await prisma.role.findUnique({ where: { name: "FACULTY" }, select: { id: true } });
-  if (!role) throw new NotFoundError("Default registration role is not configured");
+  // Program selection maps to the FACULTY role; office selection (no program)
+  // maps to STAFF. Campus-only registrations keep the FACULTY default and can
+  // be refined later by an administrator.
+  const roleName = input.programId ? "FACULTY" : input.officeId ? "STAFF" : "FACULTY";
+  const role = await prisma.role.findUnique({ where: { name: roleName }, select: { id: true } });
+  if (!role) throw new NotFoundError(`Default registration role (${roleName}) is not configured`);
 
   const passwordHash = await hashPassword(input.password);
   const user = await prisma.$transaction(async (tx) => {
@@ -102,7 +152,10 @@ export async function register(input: RegistrationInput, ipAddress: string | nul
         lastName: input.lastName,
         suffix: input.suffix || null,
         roleId: role.id,
-        departmentId: input.departmentId,
+        programId: input.programId ?? null,
+        // When a registrant belongs to a department-level office, keep the
+        // department link so the user shows up under the right department.
+        departmentId: office?.departmentId ?? null,
         status: "ACTIVE",
       },
       select: { id: true, email: true, firstName: true, lastName: true },
@@ -116,7 +169,15 @@ export async function register(input: RegistrationInput, ipAddress: string | nul
     userId: user.id,
     entity: "user",
     entityId: user.id,
-    newValue: { source: "registration_invite", email: user.email, departmentId: input.departmentId },
+    newValue: {
+      source: "registration_invite",
+      email: user.email,
+      campusId: input.campusId,
+      collegeId: input.collegeId ?? null,
+      programId: input.programId ?? null,
+      officeId: input.officeId ?? null,
+      roleName,
+    },
     ipAddress: ipAddress ?? undefined,
     userAgent: userAgent ?? undefined,
   });

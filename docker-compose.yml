@@ -76,7 +76,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-urs_minio_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-urs_minio_secret}
-      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.pages.dev}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.online}
     volumes:
       - urs-minio-data:/data
     ports:
@@ -137,7 +137,7 @@ services:
   # URS-DMS server — Node.js + Express + Prisma
   # ────────────────────────────────────────────────────────
   server:
-    image: ghcr.io/ikykchrist/urs-dms-server:v1.3
+    image: urs-dms-server:local
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -148,7 +148,8 @@ services:
     environment:
       # Override docker-internal hostnames
       DATABASE_URL: postgresql://${POSTGRES_USER:-urs_user}:${POSTGRES_PASSWORD:-urs_password}@urs-postgres:5432/${POSTGRES_DB:-urs_dms}?schema=public&connection_limit=20&pool_timeout=30
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:5173}
+      PUBLIC_APP_URL: http://localhost:5173
+      CLIENT_URL: http://localhost:5173,http://127.0.0.1:5173
       MINIO_ENDPOINT: urs-minio
       MINIO_PORT: 9000
       MINIO_USE_SSL: "false"
@@ -156,6 +157,7 @@ services:
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://minio.localhost:9000}
       REDIS_HOST: urs-redis
       REDIS_PORT: 6379
+      GOTENBERG_URL: http://gotenberg:3000
       NODE_ENV: production
       PORT: 4000
     extra_hosts:
@@ -177,6 +179,43 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - urs-net
+
+  # ────────────────────────────────────────────────────────
+  # URS-DMS frontend — Vite build served by Nginx
+  # ────────────────────────────────────────────────────────
+  frontend:
+    image: urs-dms-frontend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api/v1
+    container_name: urs-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_UPSTREAM: server:4000
+    ports:
+      - "5173:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - urs-net
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: urs-gotenberg
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
     networks:
       - urs-net
 

@@ -1,0 +1,27 @@
+flowchart TD
+    A(["User clicks Request Document"]) --> B["Request modal<br/>select 1 - 3 documents (DocumentRequestItem)"]
+    B --> C{"1-3 items + explanation filled?"}
+    C -- No --> D["Inline validation error"]
+    D --> B
+    C -- Yes --> E["POST /api/v1/requests<br/>status = PENDING<br/>(legacy single documentId kept)"]
+    E --> F["Notify admins/records office:<br/>request pending review"]
+    F --> G(["Admin Requests tab<br/>GET /requests/browse (department bucket)"])
+    G --> H{"Admin action"}
+
+    H -- Approve --> I["POST approve (optional note)<br/>status APPROVED"]
+    H -- Reject --> J["POST reject<br/>status REJECTED<br/>reason REQUIRED"]
+    H -- "List only (no presigned<br/>URLs in browse)" --> K["Browse shows name/type/<br/>owner/date/size only"]
+
+    I --> L["Fulfill each request item<br/>status FULFILLED - delivers EVERY item"]
+    L --> M["Notify requester"]
+    M --> N(["Requester sees Fulfilled in My Requests"])
+    N --> O["Requester downloads each delivered file<br/>(presigned GET / pick from repository)"]
+    O --> P(["Request closed"])
+
+    J --> Q["Notify requester with rejection reason"]
+    Q --> R(["Requester can cancel own pending request"])
+    R --> S["POST /requests/:id/cancel"]
+    S --> P
+
+    H -- Cancel by admin --> T["Admin cancels request"]
+    T --> Q

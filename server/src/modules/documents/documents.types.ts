@@ -27,7 +27,7 @@ export interface DocumentListItem {
   currentSizeBytes: string | null;
   currentChecksum: string | null;
   /** Latest non-deleted AACCUP submission status for this document, if any. */
-  submissionStatus: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | null;
+  submissionStatus: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | "WITHDRAWN" | null;
   retentionUntil: Date | null;
   metadata: Prisma.JsonValue;
   tags: string[];

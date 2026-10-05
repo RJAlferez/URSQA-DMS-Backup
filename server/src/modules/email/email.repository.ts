@@ -39,33 +39,33 @@ export async function enqueueMessages(
 export async function claimDueMessages(
   batchSize: number,
 ): Promise<ClaimedEmailMessage[]> {
-  const due = await prisma.emailMessage.findMany({
-    where: {
-      status: "PENDING",
-      nextAttemptAt: { lte: new Date() },
-    },
-    select: { id: true },
-    orderBy: { createdAt: "asc" },
-    take: batchSize,
-  });
-  if (due.length === 0) return [];
+  // Atomic claim: select due rows FOR UPDATE SKIP LOCKED inside a transaction,
+  // flip them to SENDING, and read back ONLY the ids this caller locked.
+  // Without the row locks two concurrent claimers (BullMQ concurrency 2 plus
+  // the in-process poller) could select overlapping batches and both deliver
+  // the same message — duplicate emails and duplicate EMAIL_SENT audit rows.
+  return prisma.$transaction(async (tx) => {
+    const due = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM email_messages
+      WHERE status = 'PENDING' AND "nextAttemptAt" <= NOW()
+      ORDER BY "createdAt" ASC
+      LIMIT ${batchSize}
+      FOR UPDATE SKIP LOCKED`;
+    if (due.length === 0) return [];
 
-  const ids = due.map((d) => d.id);
-  const claimed = await prisma.emailMessage.updateMany({
-    where: {
-      id: { in: ids },
-      status: "PENDING",
-    },
-    data: { status: "SENDING" },
-  });
-  if (claimed.count === 0) return [];
+    const ids = due.map((d) => d.id);
+    await tx.emailMessage.updateMany({
+      where: { id: { in: ids }, status: "PENDING" },
+      data: { status: "SENDING" },
+    });
 
-  const rows = await prisma.emailMessage.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, to: true, subject: true, body: true, attempts: true, maxAttempts: true, provider: true },
-    orderBy: { createdAt: "asc" },
+    const rows = await tx.emailMessage.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, to: true, subject: true, body: true, attempts: true, maxAttempts: true, provider: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((row) => ({ ...row, provider: row.provider }));
   });
-  return rows.map((row) => ({ ...row, provider: row.provider }));
 }
 
 export async function markSent(id: string): Promise<void> {

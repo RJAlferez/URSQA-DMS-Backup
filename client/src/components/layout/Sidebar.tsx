@@ -18,6 +18,9 @@ import {
   Shield,
   ShieldCheck,
   LogOut,
+  GitBranch,
+  Sliders,
+  Wand2,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
@@ -25,6 +28,7 @@ import { confirmLeaveIfUploading } from "@/lib/uploadBus"
 import { Button } from "@/components/ui/Button"
 import { Logo } from "@/components/layout/Logo"
 import { useAuth } from "@/context/AuthContext"
+import { hasServerPermission } from "@/lib/permissions"
 
 interface SidebarItem {
   id: string
@@ -35,7 +39,7 @@ interface SidebarItem {
 const sidebarItems: SidebarItem[] = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { id: "documents", icon: FolderArchive, label: "My Documents" },
-  { id: "aaccup", icon: GraduationCap, label: "AACCUP" },
+  { id: "aaccup", icon: GraduationCap, label: "Accreditation" },
   { id: "requests", icon: Inbox, label: "Requests" },
   { id: "users", icon: Users, label: "User Management" },
   { id: "audit", icon: ClipboardList, label: "Audit Logs" },
@@ -47,7 +51,10 @@ const rootConsoleItems: SidebarItem[] = [
   { id: "root-organization", icon: Network, label: "Organization" },
   { id: "root-folder-builder", icon: FolderTree, label: "Folder Builder" },
   { id: "root-requirement-builder", icon: FileCheck2, label: "Requirement Builder" },
+  { id: "root-workflow-builder", icon: GitBranch, label: "Workflow Builder" },
   { id: "root-form-builder", icon: ClipboardList, label: "Form Builder" },
+  { id: "root-setup-wizard", icon: Wand2, label: "Setup Wizard" },
+  { id: "root-config", icon: Sliders, label: "Configuration Engine" },
   { id: "root-maintenance", icon: HardDrive, label: "Storage Maintenance" },
   { id: "root-roles-permissions", icon: Shield, label: "Roles & Permissions" },
   { id: "root-audit", icon: ScrollText, label: "System Audit" },
@@ -65,8 +72,12 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard", onNavigate, showRoot = false, className }: SidebarProps) {
   const [rootConsoleOpen, setRootConsoleOpen] = useState(true)
-  const { logout } = useAuth()
-  const accreditationActive = ["aaccup", "iso", "aaccup-area", "iso-area", "certification", "submissions", "tasks"].includes(activePage)
+  const { logout, user } = useAuth()
+  // Department Coordinators reach the admin portal but do not hold audit.read;
+  // hiding the item keeps the UI aligned with the server gate.
+  const canViewAudit = hasServerPermission(user, "audit.read")
+  const visibleItems = sidebarItems.filter((item) => item.id !== "audit" || canViewAudit)
+  const accreditationActive = ["aaccup", "iso", "aaccup-area", "iso-area", "submissions", "tasks"].includes(activePage)
   const [aaccupOpen, setAaccupOpen] = useState(accreditationActive)
   const rootConsoleActive = rootConsoleItems.some((item) => item.id === activePage)
   const rootConsoleHighlighted = rootConsoleActive
@@ -103,7 +114,7 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
 
         <nav className="flex-1 px-3 py-4 overflow-y-auto">
           <div className="space-y-1">
-            {sidebarItems.map((item) => {
+            {visibleItems.map((item) => {
               const Icon = item.icon
               const isActive = activePage === item.id
               if (item.id === "aaccup") {
@@ -116,18 +127,19 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] font-medium transition-all duration-150",
                         accreditationActive ? "bg-primary text-white shadow-lift shadow-primary/30" : "text-slate-300 hover:bg-white/5 hover:text-white",
-                        collapsed && "justify-center",
                       )}
                     >
                       <Icon className={cn("w-[18px] h-[18px] flex-shrink-0", accreditationActive ? "text-white" : "text-slate-400")} />
-                      {!collapsed && <span className="flex-1 text-left">AACCUP</span>}
+                      {!collapsed && <span className="flex-1 text-left">Accreditation</span>}
                       {!collapsed && <ChevronDown className={cn("w-4 h-4 transition-transform", !aaccupOpen && "-rotate-90")} />}
                     </button>
                     {!collapsed && aaccupOpen && (
                       <div className="mt-1 ml-5 space-y-1 border-l border-white/10 pl-3">
                         {[
                           { id: "aaccup", label: "AACCUP", icon: GraduationCap },
-                          { id: "iso", label: "ISO", icon: ShieldCheck },
+                          { id: "iso", label: "ISO 21001:2025", icon: ShieldCheck },
+                          { id: "submissions", label: "Submissions", icon: FileCheck2 },
+                          { id: "tasks", label: "Tasks", icon: ClipboardList },
                         ].map((child) => {
                           const ChildIcon = child.icon
                           return (
@@ -159,7 +171,6 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
                       isActive
                         ? "bg-primary text-white shadow-lift shadow-primary/30"
                         : "text-slate-300 hover:bg-white/5 hover:text-white",
-                      collapsed && "justify-center"
                     )}
                   >
                     <Icon className={cn(
@@ -180,8 +191,7 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
                     rootConsoleHighlighted
                       ? "bg-white/10 text-white"
                       : "text-slate-400 hover:bg-white/5 hover:text-white",
-                    collapsed && "justify-center",
-                  )}
+                    )}
                 >
                   <ServerCog className="h-[18px] w-[18px] flex-shrink-0 text-blue-300" />
                   {!collapsed && <span className="flex-1 text-left">Root Console</span>}
@@ -203,8 +213,7 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
                             isActive
                               ? "bg-primary/20 text-white ring-1 ring-primary/40"
                               : "text-slate-400 hover:bg-white/5 hover:text-white",
-                            collapsed && "justify-center",
-                          )}
+                            )}
                         >
                           <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-blue-300" : "text-slate-500")} />
                           {!collapsed && <span>{item.label}</span>}
@@ -223,11 +232,7 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
             variant="ghost"
             size="sm"
             onClick={onToggle}
-            className={cn(
-              "w-full justify-start text-slate-300 hover:text-white hover:bg-white/5 px-3",
-              collapsed && "justify-center px-2"
-            )}
-          >
+            className="w-full justify-start text-slate-300 hover:text-white hover:bg-white/5 px-3">
             {collapsed ? (
               <ChevronRight className="w-[18px] h-[18px]" />
             ) : (
@@ -244,12 +249,8 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
               if (!confirmLeaveIfUploading()) return
               logout()
             }}
-            className={cn(
-              "w-full justify-start px-3 text-red-300 hover:bg-white/5 hover:text-red-200",
-              collapsed && "justify-center px-2",
-            )}
-          >
-            <LogOut className={cn("h-[18px] w-[18px] flex-shrink-0", !collapsed && "mr-2.5")} />
+            className="w-full justify-start px-3 text-red-300 hover:bg-white/5 hover:text-red-200">
+            <LogOut className="h-[18px] w-[18px] flex-shrink-0" />
             {!collapsed && <span className="text-[13px]">Logout</span>}
           </Button>
         </div>

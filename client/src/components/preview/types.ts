@@ -37,6 +37,7 @@ export interface PreviewFileVersion {
 export interface PreviewDownloadResult {
   url: string
   filename: string
+  mimeType?: string
 }
 
 export interface ServerDocumentVersion {

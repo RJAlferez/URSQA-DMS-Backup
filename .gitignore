@@ -11,3 +11,24 @@ dist/
 .env.backup
 .env.*.backup
 
+# Volume backups / env tarballs (large, may contain secrets) — never commit
+backup/
+URS-DMS-env-backup.tar.gz
+URS-DMS-env-backup/
+
+# Environment variants and private credentials stay outside source backups.
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.pfx
+
+# Local data exports and generated artifacts.
+backups/
+*.dump
+*.sql.gz
+*.tsbuildinfo
+coverage/
+tools/caddy/*.exe
+

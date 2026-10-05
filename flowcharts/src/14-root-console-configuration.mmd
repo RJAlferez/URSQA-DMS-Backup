@@ -1,0 +1,35 @@
+flowchart TD
+    A(["ROOT signs in (root@urs.local)"]) --> B["requireRole('ROOT') gate"]
+    B --> C(["ROOT Console"])
+    C --> D{"Console area"}
+
+    D -- Configuration Engine --> E["Categories / keys<br/>(value types, status)"]
+    E --> E2["ROOT edits a configuration key"]
+    E2 --> E3["New ConfigurationVersion saved<br/>with rollback point"]
+    E3 --> E4{"Publish / activate?"}
+    E4 -- Yes --> E5["ConfigurationHistory records change"]
+    E4 -- Rollback --> E6["Restore prior version<br/>POST /root/config/:key/versions"]
+    E5 --> E7["Runtime reads (e.g. upload.max_size_bytes,<br/>upload.allowed_file_types) reflect new value"]
+
+    D -- Folder Builder --> F["FolderTemplate + nodes<br/>(visibility, status,<br/>assignment target type)"]
+    F --> F2["Deploy to org -> creates folder structure"]
+    F2 --> F3["Versioned template; change history"]
+
+    D -- Requirement Builder --> G["RequirementTemplate + versions"]
+    G --> G2["Map to accreditation areas"]
+    G2 --> G3["Areas become read-only in admin CRUD"]
+
+    D -- Workflow Builder --> H["WorkflowTemplate (steps/actions)<br/>bind to document scope"]
+    H --> H2["Publish workflow instance"]
+    H2 --> H3["bindWorkflowInstance on document create;<br/>gates status transitions<br/>(evaluateWorkflowAction)"]
+
+    D -- Form Builder --> I["Dynamic forms + versions"]
+
+    D -- Organization Mgmt --> J["Colleges / Departments / Offices /<br/>Programs (OrganizationVersion,<br/>change types)"]
+    J --> J2["OrganizationVersion snapshot<br/>+ OrganizationChangeType audit"]
+
+    D -- Setup Wizard --> K["Guided initial configuration"]
+
+    D -- Admin Audit --> L["Audit log browser + review"]
+
+    E7 --> M(["System behavior governed by<br/>activated configuration"])

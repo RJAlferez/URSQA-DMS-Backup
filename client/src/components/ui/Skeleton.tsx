@@ -10,7 +10,7 @@ function Skeleton({ className, variant = "rectangular", width, height, style, ..
   return (
     <div
       className={cn(
-        "relative isolate overflow-hidden bg-slate-200/70 dark:bg-slate-700/60 before:absolute before:inset-0 before:-translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/55 before:to-transparent before:animate-[skeleton-shimmer_1.8s_ease-in-out_infinite] dark:before:via-white/10",
+        "relative isolate overflow-hidden bg-slate-200/70 dark:bg-slate-700/60 before:absolute before:inset-0 before:-translate-x-[120%] before:bg-gradient-to-r before:from-transparent before:via-white/55 before:to-transparent before:animate-[skeleton-shimmer_2.2s_cubic-bezier(0.4,0,0.2,1)_infinite] dark:before:via-white/10",
         variant === "circular" && "rounded-full",
         variant === "text" && "rounded h-4",
         variant === "rectangular" && "rounded-lg",

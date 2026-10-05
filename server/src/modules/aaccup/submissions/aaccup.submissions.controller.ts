@@ -6,6 +6,7 @@ import type {
   ExportSubmissionsQuery,
   ListSubmissionsQuery,
   ReviewSubmissionInput,
+  UnsubmitSubmissionInput,
   UpdateSubmissionInput,
 } from "@/modules/aaccup/submissions/aaccup.submissions.validator";
 
@@ -75,6 +76,16 @@ export async function reviewSubmissionHandler(
   const { id } = req.params as { id: string };
   const input = req.body as ReviewSubmissionInput;
   const submission = await service.reviewSubmission(id, input, toActor(req));
+  sendSuccess(res, submission);
+}
+
+export async function unsubmitSubmissionHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { id } = req.params as { id: string };
+  const input = req.body as UnsubmitSubmissionInput;
+  const submission = await service.unsubmitSubmission(id, input, toActor(req));
   sendSuccess(res, submission);
 }
 

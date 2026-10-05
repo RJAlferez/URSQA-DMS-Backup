@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
 import { notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
+import { sendEmail } from "@/modules/email/email.service";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/utils/errors";
 import { streamZipArchive } from "@/lib/zipStream";
 import { buildExportPlan } from "@/modules/aaccup/submissions/aaccup.export-plan";
@@ -12,6 +13,7 @@ import type {
   CreateSubmissionInput,
   ListSubmissionsQuery,
   ReviewSubmissionInput,
+  UnsubmitSubmissionInput,
   UpdateSubmissionInput,
 } from "@/modules/aaccup/submissions/aaccup.submissions.validator";
 import type {
@@ -189,13 +191,12 @@ async function assertDocumentUsable(documentId: string, actor: Actor): Promise<D
   if (document.deletedAt) {
     throw new BadRequestError("Document is archived and cannot be submitted");
   }
-  // Submitters must own the document OR hold documents.update (manager
-  // delegation). We never re-assert documents.read here — that is enforced
-  // upstream when they fetched the document. We only block obvious abuse.
+  // Only the document owner or an AACCUP manager may attach a document to a
+  // submission. The previous `documents.update` fallback let any role holding
+  // that code (FACULTY/STAFF/DEPT_COORD/QAO) commandeer another user's
+  // document and have it silently moved into the AACCUP archive folder.
   if (document.ownerId !== actor.id && !isManager(actor)) {
-    if (!actor.permissions.includes("documents.update")) {
-      throw new ForbiddenError("You can only submit documents you own");
-    }
+    throw new ForbiddenError("You can only submit documents you own");
   }
   return {
     id: document.id,
@@ -576,7 +577,7 @@ async function safeNotifyReviewers(detail: AaccupSubmissionDetail): Promise<void
           },
         },
       },
-      select: { id: true },
+      select: { id: true, email: true },
     });
     if (reviewers.length === 0) return;
     await notifyUsers(
@@ -592,8 +593,62 @@ async function safeNotifyReviewers(detail: AaccupSubmissionDetail): Promise<void
         actionUrl: `/aaccup?tab=submissions&areaSet=${encodeURIComponent(detail.areaSet)}`,
       },
     );
+    await Promise.allSettled(
+      reviewers.map((reviewer) =>
+        sendEmail({
+          to: reviewer.email,
+          subject: "URS-DMS — Submission pending review",
+          body: `<p><strong>${detail.documentTitle}</strong> (${detail.areaName}) was submitted and is awaiting your review.</p>`,
+        }),
+      ),
+    );
   } catch {
     // notifications must never break the submission flow
+  }
+}
+
+/** Notify reviewers when a submitter withdraws an active submission. */
+async function safeNotifyReviewersOfWithdrawal(detail: AaccupSubmissionDetail): Promise<void> {
+  try {
+    const reviewers = await prisma.user.findMany({
+      where: {
+        status: "ACTIVE",
+        deletedAt: null,
+        role: {
+          permissions: {
+            some: {
+              permission: { code: { in: ["aaccup.submission.review", "aaccup.manage"] } },
+            },
+          },
+        },
+      },
+      select: { id: true, email: true },
+    });
+    if (reviewers.length === 0) return;
+    const message = `"${detail.documentTitle}" (${detail.areaName}) was withdrawn by the submitter${detail.status === "WITHDRAWN" && detail.withdrawalReason ? `: ${detail.withdrawalReason}` : "."}`;
+    await notifyUsers(
+      reviewers.map((reviewer) => reviewer.id),
+      "AACCUP_SUBMISSION_WITHDRAWN",
+      {
+        title: "Submission withdrawn",
+        message,
+        entity: "aaccup_submission",
+        entityId: detail.id,
+        actionUrl: `/aaccup?tab=submissions&areaSet=${encodeURIComponent(detail.areaSet)}`,
+        metadata: { withdrawnAt: detail.withdrawnAt?.toISOString() ?? null },
+      },
+    );
+    await Promise.allSettled(
+      reviewers.map((reviewer) =>
+        sendEmail({
+          to: reviewer.email,
+          subject: "URS-DMS — Submission withdrawn",
+          body: `<p><strong>${detail.documentTitle}</strong> (${detail.areaName}) was withdrawn by the submitter.</p><p>Please review the updated submission status in URS-DMS.</p>`,
+        }),
+      ),
+    );
+  } catch {
+    // notifications must never break the unsubmit operation
   }
 }
 
@@ -623,6 +678,50 @@ export async function updateSubmission(
   });
 
   return updated;
+}
+
+// -----------------------------------------------------------------------------
+// unsubmitSubmission — preserves the approved/review history while reopening
+// the requirement for a new submission version.
+// -----------------------------------------------------------------------------
+export async function unsubmitSubmission(
+  id: string,
+  input: UnsubmitSubmissionInput,
+  actor: Actor,
+): Promise<AaccupSubmissionDetail> {
+  const existing = await repo.findById(id);
+  if (!existing) throw new NotFoundError("AACCUP submission not found");
+  assertCanUpdate(actor, existing.submittedById);
+
+  if (!["PENDING", "APPROVED", "NEEDS_REVISION"].includes(existing.status)) {
+    throw new ConflictError("Only pending, approved, or returned submissions can be unsubmitted");
+  }
+
+  const withdrawn = await repo.withdraw(id, input.reason?.trim() || null);
+
+  await writeAudit({
+    action: AUDIT_ACTIONS.AACCUP_SUBMISSION_WITHDRAWN,
+    userId: actor.id,
+    entity: "aaccup_submission",
+    entityId: id,
+    oldValue: {
+      status: existing.status,
+      isCurrent: existing.isCurrent,
+      reviewedBy: existing.reviewedById,
+      reviewedAt: existing.reviewedAt,
+    },
+    newValue: {
+      status: withdrawn.status,
+      isCurrent: withdrawn.isCurrent,
+      withdrawnAt: withdrawn.withdrawnAt,
+      withdrawalReason: withdrawn.withdrawalReason,
+    },
+    ipAddress: actor.ipAddress,
+    userAgent: actor.userAgent,
+  });
+
+  await safeNotifyReviewersOfWithdrawal(withdrawn);
+  return withdrawn;
 }
 
 // -----------------------------------------------------------------------------

@@ -249,6 +249,50 @@ async function seedConfigEngine(): Promise<void> {
   console.log("[seed] configuration engine ready.");
 }
 
+// -----------------------------------------------------------------------------
+// 7. Organization master-data: seed campuses and attach the known URS colleges
+// to the Morong campus. Non-destructive: only sets college.campusId when the
+// college has no campus yet, so it never overrides an admin's assignment.
+// -----------------------------------------------------------------------------
+async function seedCampuses(): Promise<void> {
+  const CAMPUSES = [
+    { code: "URS-MORONG", name: "URS Morong Campus" },
+    { code: "URS-TANAY", name: "URS Tanay Campus" },
+    { code: "URS-BINANGONAN", name: "URS Binangonan Campus" },
+    { code: "URS-PILILLA", name: "URS Pililla Campus" },
+    { code: "URS-CARDONA", name: "URS Cardona Campus" },
+  ] as const;
+
+  const morong = await prisma.campus.upsert({
+    where: { code: "URS-MORONG" },
+    update: { name: "URS Morong Campus" },
+    create: { code: "URS-MORONG", name: "URS Morong Campus" },
+  });
+
+  for (const c of CAMPUSES) {
+    if (c.code === "URS-MORONG") continue;
+    await prisma.campus.upsert({
+      where: { code: c.code },
+      update: { name: c.name },
+      create: { code: c.code, name: c.name },
+    });
+  }
+
+  const morongColleges = ["COE", "COENG", "CIT", "COS"];
+  for (const code of morongColleges) {
+    await prisma.college
+      .updateMany({
+        where: { code, campusId: null },
+        data: { campusId: morong.id },
+      })
+      .catch(() => {
+        /* ignore missing college */
+      });
+  }
+
+  console.log(`[seed] campuses ready (${CAMPUSES.length}, colleges assigned to Morong)`);
+}
+
 async function main(): Promise<void> {
   console.log("[seed] upserting permissions...");
   const permissions = await seedPermissions();
@@ -268,6 +312,9 @@ async function main(): Promise<void> {
   await seedBootstrapRoot();
 
   await seedConfigEngine();
+
+  console.log("[seed] seeding campuses...");
+  await seedCampuses();
 
   console.log("[seed] done ✅");
 }

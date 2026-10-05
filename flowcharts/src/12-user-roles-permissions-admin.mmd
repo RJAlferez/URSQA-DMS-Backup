@@ -1,0 +1,27 @@
+flowchart TD
+    A(["Admin / ROOT opens User Management"]) --> B{"Task"}
+
+    B -- Create user --> C["POST /api/v1/users"]
+    C --> D["Role restricted to the 4 colleges<br/>(Science/Engineering/Industrial<br/>Tech/Education) + college category"]
+    D --> E["EmployeeId auto-derived from email<br/>(dotted email sanitized)"]
+    E --> F["User created + optional invite<br/>(see registration chart)"]
+
+    B -- Edit user / reset pw / photo --> G["Admin area details page"]
+    G --> H["Reset user password (admin)<br/>or manage profile photo"]
+    H --> I["Audit user.admin_action"]
+
+    B -- Deactivate / activate --> J["PATCH user status<br/>ACTIVE/INACTIVE/LOCKED"]
+    B -- View sessions --> K["GET /auth/sessions<br/>revoke one or kill-all"]
+
+    F --> L(["User lives in DB with role +<br/>permission bindings"])
+    I --> L
+    J --> L
+    K --> M["Session revoked; user forced re-login"]
+
+    L --> N{"Role - permission model"}
+    N --> O["7 roles: ROOT, ADMINISTRATOR,<br/>QUALITY_ASSURANCE_OFFICER,<br/>DEPARTMENT_COORDINATOR, FACULTY,<br/>STAFF, READ_ONLY"]
+    N --> P["ROOT binds EVERY permission incl.<br/>root.* (no other role gets root.*)"]
+    N --> Q["Server permissions matrix is AUTHORITATIVE<br/>(100+ additive codes); client matrix is<br/>hand-maintained + may drift (UI loose)"]
+    N --> R["Route gates: requirePermission /<br/>requireAnyPermission / requireRole<br/>- never if (role === 'admin')"]
+
+    O --> S(["Each request loads user permissions<br/>from JWT/DB -> authorize"])

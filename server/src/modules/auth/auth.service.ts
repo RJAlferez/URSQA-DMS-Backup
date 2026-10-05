@@ -267,6 +267,24 @@ export async function login(
     actorRole: user.role?.name ?? undefined,
   });
 
+  // ROOT sessions get the dedicated root.login action. This is emitted here,
+  // where the role and session id are known, so it is written exactly once —
+  // the old polling watcher re-emitted root.login on every token refresh.
+  if (user.role?.name === "ROOT") {
+    await writeAudit({
+      action: AUDIT_ACTIONS.ROOT_LOGIN,
+      userId: user.id,
+      entity: "session",
+      entityId: sessionId,
+      ipAddress,
+      userAgent,
+      category: "AUTHENTICATION",
+      severity: "INFO",
+      actorName: [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
+      actorRole: user.role.name,
+    });
+  }
+
   const userView = await buildUserView(user.id);
   return { accessToken, refreshToken, user: userView };
 }
@@ -391,6 +409,24 @@ export async function logout(
       category: "AUTHENTICATION",
       severity: "INFO",
     });
+
+    // ROOT sessions also get the dedicated root.logout action, written here
+    // exactly once (previously the polling watcher could never observe the
+    // logout because revoked session rows were never removed).
+    const role = await prisma.user.findUnique({
+      where: { id: resolvedUserId },
+      select: { role: { select: { name: true } } },
+    });
+    if (role?.role.name === "ROOT") {
+      await writeAudit({
+        action: AUDIT_ACTIONS.ROOT_LOGOUT,
+        userId: resolvedUserId,
+        ipAddress,
+        userAgent,
+        category: "AUTHENTICATION",
+        severity: "INFO",
+      });
+    }
   }
 }
 

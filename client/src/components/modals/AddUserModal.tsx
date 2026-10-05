@@ -52,7 +52,9 @@ export function AddUserModal({ open, onOpenChange, onSuccess }: AddUserModalProp
     listSystemRoles({ pageSize: 100 })
       .then((page) => {
         setRoles(page.items)
-        if (page.items.length > 0 && !role) setRole(page.items[0].id)
+        if (page.items.length > 0) {
+          setRole((current) => current || page.items[0]!.id)
+        }
       })
       .catch(() => setRoles([]))
     Promise.all([

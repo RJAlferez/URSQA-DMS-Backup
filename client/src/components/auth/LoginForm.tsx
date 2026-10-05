@@ -37,6 +37,7 @@ export function LoginForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (isLoading) return
     setError("")
     setValidationErrors({})
 
@@ -51,16 +52,16 @@ export function LoginForm() {
         navigate("/user/dashboard")
       }
     } else {
-      setError("Invalid email or password. Please try again.")
+      setError(result.error || "Invalid email or password. Please try again.")
     }
   }
 
   return (
     <AuthCard>
       <AuthCardHeader>
-        <AuthCardTitle>Sign in to your account</AuthCardTitle>
+        <AuthCardTitle>URS-QA DMS</AuthCardTitle>
         <AuthCardDescription>
-          Enter your credentials to access the document management system
+          Quality Assurance Data Management System. Enter your credentials to continue.
         </AuthCardDescription>
       </AuthCardHeader>
 

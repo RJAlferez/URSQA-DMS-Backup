@@ -1158,7 +1158,7 @@ export default function RootRequirementBuilder() {
   ].filter((warning): warning is string => Boolean(warning));
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Requirement Builder"
         description="Author versioned accreditation structures, upload rules, and organization assignments."

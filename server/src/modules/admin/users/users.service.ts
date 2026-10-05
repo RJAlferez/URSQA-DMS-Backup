@@ -286,7 +286,6 @@ export async function updateUser(
     const roleCodes = await repo.loadRolePermissionCodes(input.roleId);
     assertCanAssignRole(actor, roleCodes);
   }
-
   if (input.departmentId !== undefined) {
     await assertDepartmentExists(input.departmentId);
   }
@@ -304,8 +303,10 @@ export async function updateUser(
     },
   });
 
+  const roleChanged = !!input.roleId && input.roleId !== existing.roleId;
+
   await writeAudit({
-    action: AUDIT_ACTIONS.USER_UPDATED,
+    action: roleChanged ? AUDIT_ACTIONS.USER_ROLE_CHANGED : AUDIT_ACTIONS.USER_UPDATED,
     userId: actor.id,
     entity: "user",
     entityId: id,

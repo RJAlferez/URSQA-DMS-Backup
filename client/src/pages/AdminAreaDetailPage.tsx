@@ -13,7 +13,7 @@ function areaNumber(area: OnlineAaccupArea): number {
   return match ? Number(match[0]) : 1
 }
 
-export default function AdminAreaDetailPage({ areaSet }: { areaSet: Exclude<AreaSet, "CERT"> }) {
+export default function AdminAreaDetailPage({ areaSet }: { areaSet: AreaSet }) {
   const navigate = useNavigate()
   const { areaId } = useParams<{ areaId: string }>()
   const [area, setArea] = useState<OnlineAaccupArea | null>(null)
@@ -68,7 +68,7 @@ export default function AdminAreaDetailPage({ areaSet }: { areaSet: Exclude<Area
 
   if (error || !area) {
     return (
-      <div className="p-6 lg:p-8">
+      <div className="content-padding">
         <div className="mx-auto flex max-w-lg flex-col items-center rounded-xl border border-border bg-white p-10 text-center shadow-soft">
           <AlertTriangle className="mb-3 h-8 w-8 text-amber-500" />
           <h1 className="text-lg font-semibold text-gray-900">{error === "forbidden" ? "You do not have access to this Area" : "Area not found"}</h1>
@@ -93,7 +93,7 @@ export default function AdminAreaDetailPage({ areaSet }: { areaSet: Exclude<Area
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <nav className="mb-4 flex items-center gap-1.5 text-[13px] text-gray-500" aria-label="Breadcrumb">
         <button type="button" onClick={() => navigate(backPath)} className="font-medium text-primary hover:underline">{setTitle}</button>
         <ChevronRight className="h-3.5 w-3.5" />

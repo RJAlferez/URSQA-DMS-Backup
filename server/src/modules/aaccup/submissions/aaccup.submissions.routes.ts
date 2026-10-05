@@ -9,6 +9,7 @@ import {
   listSubmissionsQuerySchema,
   updateSubmissionSchema,
   reviewSubmissionSchema,
+  unsubmitSubmissionSchema,
 } from "@/modules/aaccup/submissions/aaccup.submissions.validator";
 import {
   archiveSubmissionHandler,
@@ -18,6 +19,7 @@ import {
   listSubmissionsHandler,
   restoreSubmissionHandler,
   reviewSubmissionHandler,
+  unsubmitSubmissionHandler,
   updateSubmissionHandler,
 } from "@/modules/aaccup/submissions/aaccup.submissions.controller";
 
@@ -83,6 +85,16 @@ aaccupSubmissionsRouter.post(
   validateParams(submissionIdParamSchema),
   validateBody(reviewSubmissionSchema),
   asyncHandler(reviewSubmissionHandler),
+);
+
+// POST /aaccup/submissions/:id/unsubmit — submitter may withdraw any active
+// submission, including one already approved; the historical row is retained.
+aaccupSubmissionsRouter.post(
+  "/:id/unsubmit",
+  requirePermission("aaccup.submission.update"),
+  validateParams(submissionIdParamSchema),
+  validateBody(unsubmitSubmissionSchema),
+  asyncHandler(unsubmitSubmissionHandler),
 );
 
 // DELETE /aaccup/submissions/:id  (soft delete = archive)

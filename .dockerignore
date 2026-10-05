@@ -1,0 +1,63 @@
+# Frontend build context is the repo root; the root Dockerfile copies only
+# ./client and ./deploy/nginx. Exclude everything else.
+
+# Backend
+server/
+docker/
+
+# Local dev / ops artefacts
+.docker/
+.dokploy/
+.wrangler/
+.claude/
+.github/
+docs/
+scripts/
+tools/
+backup/
+REPLACED/
+
+# Build outputs
+dist/
+**/dist/
+!client/dist/
+!client/dist/**
+**/node_modules/
+node_modules/
+**/.vite/
+**/coverage/
+
+# Logs and runtime
+logs/
+*.log
+server-output.txt
+test*.txt
+version*.txt
+npm-ver.txt
+
+# Env files and secrets
+.env
+.env.*
+!.env.example
+!.env.remote
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Loose root files
+*.rar
+*.zip
+conversation_log.json
+chatgpt_handoff.md
+ai-dev.bat
+run-dev.bat
+start-dev.bat
+start-server.ps1
+restart-server.ps1
+tunnel-*.ps1
+tunnel-*.bat
+fix-audit.ps1
+cloudflare-pages-remote*.ps1

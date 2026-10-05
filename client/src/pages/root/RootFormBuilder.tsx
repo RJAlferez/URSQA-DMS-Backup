@@ -443,7 +443,7 @@ export default function RootFormBuilder() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Dynamic Form Builder"
         description="Design reusable, versioned form templates assignable to requirements, workflow steps, AACCUP areas, folder templates and future modules"
@@ -456,13 +456,13 @@ export default function RootFormBuilder() {
       />
 
       <Card className="border-border/70 shadow-soft mb-6">
-        <CardContent className="p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+        <CardContent className="p-0">
+          <div className="toolbar-padding flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder="Search forms..."
-                className="pl-10 h-10 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white"
+                className="pl-10 h-9 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />

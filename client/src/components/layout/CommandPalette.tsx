@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   Search,
   FileText,
@@ -15,7 +15,8 @@ import { listSystemUsers } from "@/services/admin"
 interface CommandPaletteProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onNavigate: (page: string) => void
+  onNavigate: (page: string, query?: Record<string, string>) => void
+  isUser?: boolean
 }
 
 interface SearchResult {
@@ -25,13 +26,13 @@ interface SearchResult {
   subtitle: string
   badge?: string
   page?: string
+  query?: Record<string, string>
 }
 
 const staticPages: SearchResult[] = [
   { id: "p-dashboard", type: "page", title: "Dashboard", subtitle: "Go to Dashboard", page: "dashboard" },
-  { id: "p-aaccup", type: "page", title: "AACCUP", subtitle: "AACCUP, ISO, Certification and submissions", page: "aaccup" },
-  { id: "p-iso", type: "page", title: "ISO", subtitle: "Go to ISO 21001", page: "iso" },
-  { id: "p-cert", type: "page", title: "Certification", subtitle: "Go to Certification", page: "certification" },
+  { id: "p-aaccup", type: "page", title: "Accreditation", subtitle: "AACCUP and ISO submissions", page: "aaccup" },
+  { id: "p-iso", type: "page", title: "ISO 21001:2025", subtitle: "Go to ISO 21001:2025", page: "iso" },
   { id: "p-submissions", type: "page", title: "Submissions", subtitle: "Review AACCUP submissions", page: "submissions" },
   { id: "p-requests", type: "page", title: "Requests", subtitle: "Review file requests", page: "requests" },
   { id: "p-documents", type: "page", title: "Document Repository", subtitle: "Go to Document Repository", page: "documents" },
@@ -46,7 +47,7 @@ const typeConfig = {
   page: { icon: ArrowRight, color: "text-gray-500", bg: "bg-gray-100" },
 }
 
-export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, onNavigate, isUser }: CommandPaletteProps) {
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [results, setResults] = useState<SearchResult[]>([])
@@ -54,16 +55,22 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const portalPages = useMemo(
+    () => (isUser ? staticPages.filter((p) => p.page !== "users" && p.page !== "audit") : staticPages),
+    [isUser]
+  )
+
   useEffect(() => {
     if (query.trim().length < 2) {
-      setResults(staticPages)
+      setResults(portalPages)
       return
-    }
-    setLoading(true)
-    Promise.all([
-      listOnlineDocuments({ search: query }).catch(() => []),
-      listSystemUsers({ search: query, pageSize: 50 }).catch(() => ({ items: [], meta: { page: 1, pageSize: 50, total: 0, totalPages: 1 } })),
-    ])
+    }    setLoading(true)
+    const documentPromise = listOnlineDocuments({ search: query }).catch(() => [])
+    Promise.all(
+      isUser
+        ? [documentPromise]
+        : [documentPromise, listSystemUsers({ search: query, pageSize: 50 }).catch(() => ({ items: [], meta: { page: 1, pageSize: 50, total: 0, totalPages: 1 } }))]
+    )
       .then(([docs, users]) => {
         const documentResults: SearchResult[] = docs.map((doc) => ({
           id: `doc-${doc.id}`,
@@ -71,28 +78,32 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
           title: doc.name,
           subtitle: `${doc.department} · ${doc.area}`,
           badge: doc.status,
+          page: "documents",
+          query: { highlight: doc.id },
         }))
-        const userResults: SearchResult[] = users.items.map((user) => ({
+        const userResults: SearchResult[] = (users?.items ?? []).map((user) => ({
           id: `user-${user.id}`,
           type: "user",
           title: [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ").trim(),
           subtitle: user.email,
           badge: user.status,
+          page: "users",
+          query: { highlight: user.id },
         }))
-        setResults([...documentResults, ...userResults])
+        setResults(isUser ? documentResults : [...documentResults, ...userResults])
         setLoading(false)
       })
-      .catch(() => { setResults(staticPages); setLoading(false) })
-  }, [query])
+      .catch(() => { setResults(portalPages); setLoading(false) })
+  }, [query, isUser, portalPages])
 
   useEffect(() => {
     if (open) {
       setQuery("")
       setSelectedIndex(0)
-      setResults(staticPages)
+      setResults(portalPages)
       setTimeout(() => inputRef.current?.focus(), 50)
     }
-  }, [open])
+  }, [open, portalPages])
 
   useEffect(() => {
     setSelectedIndex(0)
@@ -101,7 +112,7 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
   const handleSelect = useCallback(
     (result: SearchResult) => {
       if (result.page) {
-        onNavigate(result.page)
+        onNavigate(result.page, result.query)
       }
       onOpenChange(false)
     },

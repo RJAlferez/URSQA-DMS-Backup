@@ -17,7 +17,7 @@ export function PageHeader({ title, description, actions, className }: PageHeade
       <div>
         <h1 className="text-2xl sm:text-[26px] font-extrabold text-navy-900 tracking-tight dark:text-gray-100">{title}</h1>
         {description && (
-          <p className="mt-1.5 text-[13px] sm:text-[14px] text-gray-500">{description}</p>
+          <p className="mt-1.5 hidden text-[13px] text-gray-500 dark:text-gray-300 sm:block sm:text-[14px]">{description}</p>
         )}
       </div>
       {actions && (

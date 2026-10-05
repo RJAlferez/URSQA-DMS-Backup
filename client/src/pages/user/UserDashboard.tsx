@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge"
 import { Button } from "@/components/ui/Button"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { useAuth } from "@/context/AuthContext"
+import { hasServerPermission } from "@/lib/permissions"
 import { listOnlineDocuments } from "@/services/documents"
 import { listRepositoryFolders } from "@/services/documents"
 import { listFavoriteOnlineDocuments } from "@/services/documents"
@@ -64,16 +65,19 @@ export default function UserDashboard({ onNavigate }: UserDashboardProps) {
   const [progressError, setProgressError] = useState(false)
 
   const firstName = user?.name?.split(" ")[0] ?? "User"
+  const canReadAaccup = hasServerPermission(user, "aaccup.read")
+  const canReadRequirements = hasServerPermission(user, "aaccup.requirement.read")
 
   useEffect(() => {
-    const unsub = subscribeUserAttention(setAttention)
-    if (user) refreshUserAttention(user.id)
+    if (!user) return
+    const unsub = subscribeUserAttention(setAttention, user.id)
+    void refreshUserAttention(user.id, user.permissions)
     return unsub
   }, [user])
 
   useEffect(() => {
     if (!user) return
-    const poll = setInterval(() => refreshUserAttention(user.id), 30000)
+    const poll = setInterval(() => refreshUserAttention(user.id, user.permissions), 30000)
     return () => clearInterval(poll)
   }, [user])
 
@@ -102,20 +106,26 @@ export default function UserDashboard({ onNavigate }: UserDashboardProps) {
     }
   }, [loadSecondaryData])
 
+  const { loading: attentionLoading, allSubmissions } = attention
+
   useEffect(() => {
+    if (!canReadAaccup || !canReadRequirements) {
+      setProgressRows([])
+      return
+    }
+    if (attentionLoading) return
     let cancelled = false
     const loadProgress = async () => {
       try {
         const rows = await Promise.all(([
           ["AACCUP", "AACCUP", "aaccup"],
-          ["ISO", "ISO", "iso"],
-          ["CERT", "Certification", "certification"],
+          ["ISO", "ISO 21001:2025", "iso"],
         ] as const).map(async ([key, label, page]) => {
           const areas = await listOnlineAaccupAreas(key)
           const requirements = (await Promise.all(areas.map((area) => listOnlineRequirements(area.id)))).flat()
           const requirementIds = new Set(requirements.map((requirement) => requirement.id))
-          const latest = new Map<string, (typeof attention.allSubmissions)[number]>()
-          attention.allSubmissions.filter((submission) => submission.areaSet === key && requirementIds.has(submission.requirementId)).forEach((submission) => {
+          const latest = new Map<string, (typeof allSubmissions)[number]>()
+          allSubmissions.filter((submission) => submission.areaSet === key && requirementIds.has(submission.requirementId)).forEach((submission) => {
             const current = latest.get(submission.requirementId)
             if (!current || submission.submittedAt > current.submittedAt) latest.set(submission.requirementId, submission)
           })
@@ -135,18 +145,18 @@ export default function UserDashboard({ onNavigate }: UserDashboardProps) {
     }
     void loadProgress()
     return () => { cancelled = true }
-  }, [attention.allSubmissions])
+  }, [canReadAaccup, canReadRequirements, attentionLoading, allSubmissions])
 
   const nav = (page: string, query?: Record<string, string>) => onNavigate?.(page, query)
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title={`Good morning, ${firstName}`}
         description="Here's what needs your attention."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 cursor-pointer" onClick={() => nav("aaccup", { tab: "tasks", taskFilter: "due-soon" })}>
           <CardContent className="p-5 md:p-6">
             <div className="flex items-start justify-between gap-3">
@@ -184,7 +194,9 @@ export default function UserDashboard({ onNavigate }: UserDashboardProps) {
           <CardTitle className="text-[15px] font-semibold">My Accreditation Progress</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {progressError ? (
+          {!canReadAaccup || !canReadRequirements ? (
+            <p className="py-3 text-center text-[13px] text-gray-400">Accreditation progress is not available for your role.</p>
+          ) : progressError ? (
             <p className="py-3 text-center text-[13px] text-red-500">Accreditation progress is unavailable.</p>
           ) : attention.loading || progressRows.length === 0 ? (
             <div className="space-y-4">{[1, 2, 3].map((i) => <Skeleton key={i} variant="rectangular" className="h-12" />)}</div>
@@ -286,7 +298,7 @@ export default function UserDashboard({ onNavigate }: UserDashboardProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">

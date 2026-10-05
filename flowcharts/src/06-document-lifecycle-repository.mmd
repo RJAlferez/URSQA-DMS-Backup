@@ -1,0 +1,35 @@
+flowchart TD
+    A(["User opens Documents / My Documents"]) --> B{"Create folder or upload?"}
+    B -- New Folder --> C["POST /api/v1/folders<br/>{name, parentId?}"]
+    C --> D{"Name unique in parent?"}
+    D -- No --> E["409 conflict"]
+    D -- Yes --> F["Folder created + audit"]
+    F --> G(["Folder visible in tree"])
+    B -- Upload --> H["Upload pipeline<br/>(create -> version -> presign PUT<br/>-> verify)"]
+    H --> I(["File at repository root / folder"])
+
+    I --> J{"User action"}
+    J -- Rename / Move --> K["PATCH /documents/:id<br/>POST copy / move to folder"]
+    J -- Replace version --> L["addOnlineDocumentVersion<br/>new version row; old kept in history"]
+    J -- Favorite --> M["POST /documents/:id/favorite"]
+    J -- Share --> N["POST /documents/:id/share<br/>{user, READ|WRITE, expiry}"]
+    J -- Download / Preview --> O["GET /documents/:id/download|preview<br/>presigned GET URL"]
+    J -- Delete --> P["DELETE /documents/:id<br/>(soft delete) -> recycle bin"]
+
+    K --> Q(["Updated / relocated"])
+    L --> L1["Version +1; audit; thumbnail regen"] --> Q
+    M --> M1["Starred; visible in Favorites"] 
+    N --> N1["Recipient sees in Requested/Shared"]
+    O --> O1["Browser PUT/GET MinIO presigned"]
+    P --> R(["Item in Recycle Bin"])
+    R --> S{"Restore or permanent?"}
+    S -- Restore --> T["POST /documents/:id/restore<br/>conflict-aware (keep_both / replace / cancel)"]
+    T --> U{"Name conflict?"}
+    U -- Yes --> V["Client chooses resolution"]
+    V --> W(["Restored"])
+    U -- No --> W
+    S -- Permanent delete --> X["DELETE /documents/:id/permanent<br/>snapshot-guarded"]
+    X --> Y{"Has protected snapshots?"}
+    Y -- Yes --> Z["Blocked - cannot purge"]
+    Y -- No --> AA["Purge row + object + audit"]
+    AA --> AB(["Gone forever"])

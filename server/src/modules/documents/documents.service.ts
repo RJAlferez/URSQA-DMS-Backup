@@ -6,6 +6,8 @@ import {
   deleteObject,
   objectExists,
   thumbnailObjectKey,
+  previewObjectKey,
+  putObject,
 } from "@/lib/storage";
 import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
@@ -22,7 +24,9 @@ import {
   recordWorkflowAction,
   scopesForDocument,
 } from "@/modules/workflow/workflow.engine";
-import { BadRequestError, ConflictError, NotFoundError } from "@/utils/errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ServiceUnavailableError } from "@/utils/errors";
+import { env } from "@/config/env";
+import { resolveFolderAccess, assertFolderAccess } from "@/modules/folders/folderSharing.service";
 import * as repo from "@/modules/documents/documents.repository";
 import type { Prisma } from "@prisma/client";
 import type { ListDocumentsQuery } from "@/modules/documents/documents.validator";
@@ -103,8 +107,9 @@ function canReadWrite(actor: Actor, ownerId: string): boolean {
   return false;
 }
 
-async function assertCanRead(actor: Actor, doc: { ownerId: string; id: string }): Promise<void> {
+async function assertCanRead(actor: Actor, doc: { ownerId: string; id: string; folderId?: string | null }): Promise<void> {
   if (canReadWrite(actor, doc.ownerId)) return;
+  if (doc.folderId && (await resolveFolderAccess(actor.id, doc.folderId)) !== "NONE") return;
   const share = await repo.findActiveShare(doc.id, actor.id);
   if (share) return;
   // Rule 22: AACCUP submission review and document-request management are the
@@ -112,8 +117,9 @@ async function assertCanRead(actor: Actor, doc: { ownerId: string; id: string })
   // a document that is the subject of a submission/request (never write).
   if (await hasManagedReadAccess(actor, doc.id)) return;
   // Rule 1: direct-ID access to another account's item must NOT reveal
-  // existence — always 404.
-  void writeAudit({
+  // existence — always 404. The denial audit is awaited so the DENIED row is
+  // persisted before the error propagates to the client.
+  await writeAudit({
     action: AUDIT_ACTIONS.ACCESS_DENIED,
     userId: actor.id,
     entity: "document",
@@ -151,11 +157,12 @@ async function hasManagedReadAccess(actor: Actor, documentId: string): Promise<b
   return false;
 }
 
-async function assertCanWrite(actor: Actor, doc: { ownerId: string; id: string }): Promise<void> {
+async function assertCanWrite(actor: Actor, doc: { ownerId: string; id: string; folderId?: string | null }): Promise<void> {
   if (actor.id === doc.ownerId) return;
+  if (doc.folderId && (await resolveFolderAccess(actor.id, doc.folderId)) === "EDITOR") return;
   const share = await repo.findActiveShare(doc.id, actor.id);
   if (share && (share.permission === "WRITE" || share.permission === "OWNER")) return;
-  void writeAudit({
+  await writeAudit({
     action: AUDIT_ACTIONS.ACCESS_DENIED,
     userId: actor.id,
     entity: "document",
@@ -172,7 +179,7 @@ async function assertCanWrite(actor: Actor, doc: { ownerId: string; id: string }
 
 async function assertCanManage(actor: Actor, doc: { ownerId: string; id: string }): Promise<void> {
   if (actor.id === doc.ownerId) return;
-  void writeAudit({
+  await writeAudit({
     action: AUDIT_ACTIONS.ACCESS_DENIED,
     userId: actor.id,
     entity: "document",
@@ -200,6 +207,10 @@ export async function listDocuments(query: ListDocumentsQuery, actor: Actor): Pr
   if (query.departmentId) where.departmentId = query.departmentId;
   if (query.folderId !== undefined) {
     where.folderId = query.folderId; // null => root-level documents (no folder)
+    if (query.folderId) {
+      await assertFolderAccess(actor.id, query.folderId, "VIEWER");
+      delete where.ownerId;
+    }
   }
   if (query.ownerId) where.ownerId = query.ownerId;
   if (query.uploadedById) {
@@ -210,7 +221,7 @@ export async function listDocuments(query: ListDocumentsQuery, actor: Actor): Pr
   // Rule 1 / D-002: lists are ALWAYS owner-or-shared scoped — the manager
   // bypass was removed because member roles legitimately hold
   // documents.delete for their own repository.
-  where.OR = [{ ownerId: actor.id }, { shares: { some: { userId: actor.id } } }];
+  where.OR = query.folderId ? [{ folderId: query.folderId }] : [{ ownerId: actor.id }, { shares: { some: { userId: actor.id } } }];
 
   if (query.q) {
     const qFilter: Prisma.DocumentWhereInput = {
@@ -261,6 +272,7 @@ export async function createDocument(
   input: CreateDocumentInput,
   actor: Actor,
 ): Promise<DocumentWithVersionUrl> {
+  if (input.folderId) await assertFolderAccess(actor.id, input.folderId, "EDITOR");
   let created: DocumentDetail | undefined;
   await prisma.$transaction(async (tx) => {
     created = await repo.create(
@@ -348,6 +360,40 @@ export async function updateDocument(
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("Document not found");
   await assertCanWrite(actor, existing);
+
+  // BUG-2 FIX: only the document owner may change its departmentId; WRITE sharees
+  // must not be able to reclassify the document into another department archive.
+  if (
+    input.departmentId !== undefined &&
+    input.departmentId !== existing.departmentId &&
+    actor.id !== existing.ownerId
+  ) {
+    await writeAudit({
+      action: AUDIT_ACTIONS.ACCESS_DENIED,
+      userId: actor.id,
+      entity: "document",
+      entityId: id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      category: "SECURITY",
+      severity: "WARNING",
+      result: "DENIED",
+      newValue: { reason: "non_owner_department_change", ownerId: existing.ownerId },
+    });
+    throw new ForbiddenError("Only the document owner can change its department");
+  }
+
+  // Moving a document requires write access to the destination folder, exactly
+  // like createDocument. Without this a WRITE-share holder could relocate the
+  // owner's document into a folder they control and retain access after the
+  // share expires.
+  if (
+    input.folderId !== undefined &&
+    input.folderId !== null &&
+    input.folderId !== existing.folderId
+  ) {
+    await assertFolderAccess(actor.id, input.folderId, "EDITOR");
+  }
 
   const statusChanged =
     input.status !== undefined && input.status !== existing.status;
@@ -459,7 +505,7 @@ export async function restoreDocument(
   const existing = await repo.findByIdIncludingDeleted(id);
   if (!existing) throw new NotFoundError("Document not found");
   if (existing.ownerId !== actor.id) {
-    void writeAudit({
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "document",
@@ -545,6 +591,69 @@ interface ResolvedDocumentUrl {
   versionId: string;
 }
 
+const OFFICE_PREVIEW_TYPES = new Set([
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+async function getConvertedPreview(
+  objectKey: string,
+  filename: string,
+  mimeType: string,
+): Promise<DownloadResult | null> {
+  if (!OFFICE_PREVIEW_TYPES.has(mimeType) || !env.GOTENBERG_URL) return null;
+
+  const convertedKey = previewObjectKey(objectKey);
+  if (!await objectExists(convertedKey)) {
+    const source = await streamToBuffer(await getObjectStream(objectKey));
+    const form = new FormData();
+    form.append("files", new Blob([source], { type: mimeType }), filename);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), env.GOTENBERG_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${env.GOTENBERG_URL}/forms/libreoffice/convert`, {
+        method: "POST",
+        body: form,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new ServiceUnavailableError("Document preview conversion failed", { status: response.status });
+      }
+      const pdf = Buffer.from(await response.arrayBuffer());
+      if (pdf.length === 0) throw new ServiceUnavailableError("Document preview conversion returned no data");
+      await putObject(convertedKey, pdf, pdf.length, "application/pdf");
+    } catch (error) {
+      if (error instanceof ServiceUnavailableError) throw error;
+      throw new ServiceUnavailableError("Document preview conversion is unavailable", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  const converted = await statObject(convertedKey);
+  const download = await presignDownload(convertedKey, { inline: true });
+  return {
+    url: download.url,
+    objectKey: convertedKey,
+    expiresInSeconds: download.expiresInSeconds,
+    filename: filename.replace(/\.[^.]+$/, "") + ".pdf",
+    sizeBytes: String(converted.size),
+    mimeType: "application/pdf",
+  };
+}
+
 async function resolveDocumentUrl(
   id: string,
   actor: Actor,
@@ -563,7 +672,14 @@ async function resolveDocumentUrl(
     version = doc.versions.find((v) => v.id === versionId);
     if (!version) throw new NotFoundError("Version not found");
   } else {
-    const current = doc.versions[0];
+    // Prefer the explicitly promoted current version. Only fall back to the
+    // newest row for legacy documents whose currentVersionId predates the
+    // field — otherwise an unverified/abandoned version would be served as
+    // the document's content.
+    const current =
+      (doc.currentVersionId
+        ? doc.versions.find((v) => v.id === doc.currentVersionId)
+        : undefined) ?? doc.versions[0];
     if (!current) throw new NotFoundError("Document has no versions");
     version = current;
   }
@@ -615,6 +731,7 @@ export async function getDownloadUrl(
 // -----------------------------------------------------------------------------
 export async function getPreviewUrl(id: string, actor: Actor): Promise<DownloadResult> {
   const { result } = await resolveDocumentUrl(id, actor, undefined, { inline: true });
+  const convertedPreview = await getConvertedPreview(result.objectKey, result.filename, result.mimeType);
   await writeAudit({
     action: AUDIT_ACTIONS.DOCUMENT_PREVIEWED,
     userId: actor.id,
@@ -623,14 +740,16 @@ export async function getPreviewUrl(id: string, actor: Actor): Promise<DownloadR
     ipAddress: actor.ipAddress,
     userAgent: actor.userAgent,
   });
-  return result;
+  return convertedPreview ?? result;
 }
 
 export async function getThumbnailStream(id: string, actor: Actor): Promise<{ stream: Readable; mimeType: string; filename: string }> {
   const doc = await repo.findById(id);
   if (!doc) throw new NotFoundError("Document not found");
   await assertCanRead(actor, doc);
-  const version = doc.versions[0];
+  const version =
+    (doc.currentVersionId ? doc.versions.find((v) => v.id === doc.currentVersionId) : undefined) ??
+    doc.versions[0];
   if (!version) throw new NotFoundError("Document has no versions");
   const key = thumbnailObjectKey(version.objectKey);
   if (!(await objectExists(key))) {
@@ -713,11 +832,7 @@ export async function copyDocument(
   await assertCanWrite(actor, source);
 
   if (input.targetFolderId) {
-    const target = await prisma.folder.findFirst({
-      where: { id: input.targetFolderId, ownerId: actor.id, deletedAt: null },
-      select: { id: true },
-    });
-    if (!target) throw new NotFoundError("Destination folder not found");
+    await assertFolderAccess(actor.id, input.targetFolderId, "EDITOR");
   }
 
   const repositoryId = await ensureRepository(actor.id);
@@ -811,7 +926,7 @@ export async function permanentDeleteDocument(id: string, actor: Actor): Promise
   const doc = await prisma.document.findUnique({ where: { id } });
   if (!doc) throw new NotFoundError("Document not found");
   if (doc.ownerId !== actor.id) {
-    void writeAudit({
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "document",
@@ -1116,7 +1231,7 @@ export async function addVersion(
   );
   const objectKey = upload.objectKey;
 
-  const created = await repo.createVersion({
+  await repo.createVersion({
     documentId,
     versionNumber,
     objectKey,
@@ -1128,22 +1243,11 @@ export async function addVersion(
     uploadedById: actor.id,
   });
 
-  await writeAudit({
-    action: AUDIT_ACTIONS.DOCUMENT_VERSION_ADDED,
-    userId: actor.id,
-    entity: "document",
-    entityId: documentId,
-    newValue: {
-      versionId: created.id,
-      versionNumber,
-      filename: input.filename,
-      mimeType: input.mimeType,
-      sizeBytes: input.sizeBytes.toString(),
-      checksum: input.checksum,
-    },
-    ipAddress: actor.ipAddress,
-    userAgent: actor.userAgent,
-  });
+  // NOTE: no audit event here. The upload is only final once the client PUTs
+  // the bytes and `verifyUpload` confirms size + checksum — that is the single
+  // authoritative DOCUMENT_VERSION_ADDED event (mirrors recordUploadFailure,
+  // which owns the failure event). Auditing here produced two identical rows
+  // for one upload.
 
   const refreshed = await repo.findById(documentId);
   if (!refreshed) throw new NotFoundError("Document not found after version add");

@@ -7,6 +7,7 @@ import {
   createAnnouncementSchema,
   listNotificationsQuerySchema,
   notificationIdParamSchema,
+  updateNotificationPreferenceSchema,
 } from "@/modules/notifications/notifications.validator";
 import {
   createAnnouncementHandler,
@@ -15,6 +16,9 @@ import {
   listNotificationsHandler,
   markAllReadHandler,
   markReadHandler,
+  getNotificationPreferenceHandler,
+  updateNotificationPreferenceHandler,
+  listAnnouncementAudienceOptionsHandler,
 } from "@/modules/notifications/notifications.controller";
 
 // =============================================================================
@@ -52,6 +56,19 @@ notificationsRouter.get(
   asyncHandler(getUnreadCountHandler),
 );
 
+notificationsRouter.get(
+  "/preferences",
+  requirePermission("notification.read"),
+  asyncHandler(getNotificationPreferenceHandler),
+);
+
+notificationsRouter.patch(
+  "/preferences",
+  requirePermission("notification.read"),
+  validateBody(updateNotificationPreferenceSchema),
+  asyncHandler(updateNotificationPreferenceHandler),
+);
+
 notificationsRouter.patch(
   "/:id/read",
   requirePermission("notification.read"),
@@ -77,4 +94,10 @@ notificationsRouter.post(
   requirePermission("notification.manage"),
   validateBody(createAnnouncementSchema),
   asyncHandler(createAnnouncementHandler),
+);
+
+notificationsRouter.get(
+  "/announcement-audience-options",
+  requirePermission("notification.manage"),
+  asyncHandler(listAnnouncementAudienceOptionsHandler),
 );

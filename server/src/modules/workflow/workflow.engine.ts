@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
+import { getRequestId } from "@/middlewares/requestContext";
 import {
   invalidateWorkflowCache,
   workflowCacheGet,
@@ -254,6 +255,7 @@ async function writeAuditInTx(
         newValue: (entry.newValue as object | null) ?? undefined,
         ipAddress: entry.ipAddress ?? null,
         userAgent: entry.userAgent ?? null,
+        correlationId: getRequestId() ?? null,
       },
     });
     return;
@@ -537,6 +539,7 @@ export async function recordWorkflowAction(
       },
       ipAddress: actor.ipAddress ?? null,
       userAgent: actor.userAgent ?? null,
+      correlationId: getRequestId() ?? null,
     },
   });
 
@@ -588,6 +591,7 @@ export async function overrideWorkflowInstance(
         newValue: { action: input.action, status: targetStatus, note: input.note ?? null },
         ipAddress: input.actor.ipAddress ?? null,
         userAgent: input.actor.userAgent ?? null,
+        correlationId: getRequestId() ?? null,
       },
     });
     return { id: input.instanceId, status: targetStatus };

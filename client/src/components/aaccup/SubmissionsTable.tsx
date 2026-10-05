@@ -9,6 +9,7 @@ import {
   CheckCircle,
   Clock,
   RotateCcw,
+  Undo2,
   XCircle,
   Calendar,
 } from "lucide-react"
@@ -38,6 +39,7 @@ import { ReturnSubmissionModal } from "@/components/modals/ReturnSubmissionModal
 import {
   listAllOnlineSubmissions,
   reviewOnlineSubmission,
+  unsubmitOnlineSubmission,
   archiveOnlineSubmission,
   type AreaSet,
   type OnlineSubmissionListItem,
@@ -68,6 +70,8 @@ const toSubmissionDocument = (s: OnlineSubmissionListItem): Document => {
       ? "Rejected"
       : s.status === "NEEDS_REVISION"
       ? "Returned"
+      : s.status === "WITHDRAWN"
+      ? "Withdrawn"
       : "Pending"
   return {
     id: s.documentId,
@@ -104,6 +108,8 @@ const getStatusBadge = (status: string) => {
       return <Badge variant="warning">{status}</Badge>
     case "Rejected":
       return <Badge variant="danger">{status}</Badge>
+    case "Withdrawn":
+      return <Badge variant="secondary">{status}</Badge>
     default:
       return <Badge variant="secondary">{status}</Badge>
   }
@@ -146,7 +152,7 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
   const [currentFilters, setCurrentFilters] = useState<Record<string, string>>((): Record<string, string> => {
     const initialStatus = searchParams.get("status")
     const normalized = initialStatus?.toUpperCase() === "NEEDS_REVISION" ? "returned" : initialStatus?.toLowerCase()
-    return normalized && ["pending", "approved", "rejected", "returned"].includes(normalized) ? { status: normalized } : {}
+    return normalized && ["pending", "approved", "rejected", "returned", "withdrawn"].includes(normalized) ? { status: normalized } : {}
   })
   const [searchQuery, setSearchQuery] = useState("")
   const [systemDepartments, setSystemDepartments] = useState<Array<{ id: string; name: string }>>([])
@@ -253,13 +259,26 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
     }
   }
 
+  const handleUnsubmit = async (documentId: string) => {
+    const raw = rawById(documentId)
+    if (!raw) return
+    if (!window.confirm("Unsubmit this file? The current review or approval will be withdrawn, and you can submit an updated version afterward.")) return
+    const reason = window.prompt("Optional reason for unsubmission:") ?? ""
+    try {
+      await unsubmitOnlineSubmission(raw.id, reason)
+      refresh()
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to unsubmit submission.")
+    }
+  }
+
   const filteredSubmissions = submissions.filter((s) => {
     if (searchQuery && !s.name.toLowerCase().includes(searchQuery.toLowerCase()) && !s.id.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false
     }
     const requestedStatus = currentFilters.status ?? queryStatus
     if (requestedStatus && requestedStatus !== "all") {
-      const normalizedStatus = requestedStatus === "NEEDS_REVISION" || requestedStatus === "returned" ? "Returned" : requestedStatus === "REJECTED" ? "Rejected" : requestedStatus === "APPROVED" ? "Approved" : requestedStatus
+      const normalizedStatus = requestedStatus === "NEEDS_REVISION" || requestedStatus === "returned" ? "Returned" : requestedStatus === "REJECTED" ? "Rejected" : requestedStatus === "APPROVED" ? "Approved" : requestedStatus === "WITHDRAWN" ? "Withdrawn" : requestedStatus
       if (s.status.toLowerCase() !== normalizedStatus.toLowerCase()) return false
     }
     if (currentFilters.area && currentFilters.area !== "all" && s.area !== currentFilters.area) return false
@@ -315,10 +334,11 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
   const pendingCount = submissions.filter((s) => s.status === "Pending").length
   const approvedCount = submissions.filter((s) => s.status === "Approved").length
   const returnedCount = submissions.filter((s) => s.status === "Returned").length
+  const withdrawnCount = submissions.filter((s) => s.status === "Withdrawn").length
 
   return (
     <div>
-      <div className={cn("mb-6 lg:mb-8", isReview ? "grid grid-cols-2 gap-3 lg:gap-5" : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5")}>
+      <div className={cn("mb-6 lg:mb-8", isReview ? "grid grid-cols-2 responsive-gap" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 responsive-gap")}>
         {isReview ? (
           <>
             <StatCard title="All Submissions" value={submissions.length.toString()} icon={<FileText className="w-5 h-5" />} />
@@ -331,14 +351,14 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
             <UserSubmissionStatCard title="All Submissions" value={submissions.length.toString()} icon={<FileText className="h-4 w-4" />} detail="Your submitted evidence" />
             <UserSubmissionStatCard title="Pending" value={String(pendingCount)} icon={<Clock className="h-4 w-4" />} detail="Awaiting review" />
             <UserSubmissionStatCard title="Approved" value={String(approvedCount)} icon={<CheckCircle className="h-4 w-4" />} detail="Approved submissions" />
-            <UserSubmissionStatCard title="Returned" value={String(returnedCount)} icon={<RotateCcw className="h-4 w-4" />} detail="Needs your attention" />
+            <UserSubmissionStatCard title="Withdrawn" value={String(withdrawnCount)} icon={<Undo2 className="h-4 w-4" />} detail="Available to update and resubmit" />
           </>
         )}
       </div>
 
       <Card className="border-border/70 shadow-soft mb-6">
-        <CardContent className="p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+        <CardContent className="p-0">
+          <div className="toolbar-padding flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex-1">
               <div className="relative max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -346,7 +366,7 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                   placeholder="Search submissions..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-10 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white focus:ring-1.5 focus:ring-gray-200"
+                  className="pl-10 h-9 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white focus:ring-1.5 focus:ring-gray-200"
                 />
               </div>
             </div>
@@ -361,7 +381,6 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                     <SelectItem value="ALL">All Sets</SelectItem>
                     <SelectItem value="AACCUP">AACCUP</SelectItem>
                     <SelectItem value="ISO">ISO</SelectItem>
-                    <SelectItem value="CERT">Certification</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -389,6 +408,7 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                   <SelectItem value="approved">Approved</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
                   <SelectItem value="returned">Returned</SelectItem>
+                  <SelectItem value="withdrawn">Withdrawn</SelectItem>
                 </SelectContent>
               </Select>
               <SavedFilterViews
@@ -503,13 +523,13 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                 <TableHead>Department</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
-                {isReview && <TableHead className="text-right">Actions</TableHead>}
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSubmissions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isReview ? 8 : 6}>
+                  <TableCell colSpan={isReview ? 8 : 7}>
                     <EmptyState
                       variant="search"
                       title="No submissions found"
@@ -573,7 +593,7 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                       <span className="text-[13px] text-gray-500">{submission.dateModified.slice(0, 10)}</span>
                     </TableCell>
                     <TableCell>{getStatusBadge(submission.status)}</TableCell>
-                    {isReview && (
+                    {isReview ? (
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
                           {reviewable && (
@@ -627,13 +647,28 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
                           </Button>
                         </div>
                       </TableCell>
+                    ) : (
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {raw && raw.submittedById === user?.id && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(raw.status) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-amber-200 text-amber-700 hover:bg-amber-50"
+                            title="Unsubmit"
+                            onClick={() => void handleUnsubmit(submission.id)}
+                          >
+                            <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                            Unsubmit
+                          </Button>
+                        )}
+                      </TableCell>
                     )}
                   </TableRow>
                 )
               })}
             </TableBody>
           </Table>
-          <div className="mt-4 px-5 pb-5 flex items-center justify-between">
+          <div className="table-footer">
             <p className="text-[13px] text-gray-500">
               Showing {filteredSubmissions.length} of {submissions.length} submissions
             </p>

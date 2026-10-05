@@ -5,11 +5,17 @@ import { Logo } from "@/components/layout/Logo"
 interface AuthLayoutProps {
   children: ReactNode
   className?: string
+  /** Max width of the form column. Defaults to `max-w-md` (login size);
+   *  taller forms like registration pass `max-w-2xl`. */
+  maxWidthClass?: string
 }
 
-export function AuthLayout({ children, className }: AuthLayoutProps) {
+export function AuthLayout({ children, className, maxWidthClass }: AuthLayoutProps) {
   return (
-    <div className={cn("min-h-[100dvh] flex", className)}>
+    // h-full chain: html/body/#root are already height:100% + overflow:hidden
+    // (index.css), so this root exactly fills the viewport without relying on
+    // viewport units that some mobile webviews do not support.
+    <div className={cn("h-full flex bg-canvas dark:bg-canvas-dark", className)}>
       {/* Branding Panel - Left Side */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-navy-900 via-navy-800 to-primary-700 flex-col justify-between p-12 xl:p-16">
         <div>
@@ -54,10 +60,17 @@ export function AuthLayout({ children, className }: AuthLayoutProps) {
         </div>
       </div>
 
-      {/* Form Panel - Right Side */}
-      <div className="flex-1 min-h-[100dvh] overflow-y-auto bg-canvas dark:bg-canvas-dark px-3 py-5 sm:flex sm:items-center sm:justify-center sm:p-6 md:p-8 xl:p-12">
-        <div className="w-full max-w-md">
-          {children}
+      {/* Form Panel - Right Side.
+          Fixed-height internal scroll area. The card is centered with auto
+          margins on a min-h-full column: when the card fits it is vertically
+          centered; when it is taller the margins collapse to zero and the
+          panel scrolls naturally from the very top — nothing can be clipped
+          or pushed past the screen on any device. */}
+      <div className="flex-1 h-full min-h-0 overflow-y-auto overscroll-contain">
+        <div className="flex flex-col min-h-full px-4 py-6 sm:px-6 sm:py-10 md:px-10 md:py-12 xl:px-12">
+          <div className={cn("m-auto w-full", maxWidthClass ?? "max-w-md")}>
+            {children}
+          </div>
         </div>
       </div>
     </div>

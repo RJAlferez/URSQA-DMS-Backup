@@ -15,10 +15,8 @@ export const strongPasswordSchema = z
   .string()
   .min(env.PASSWORD_MIN_LENGTH, `Password must be at least ${env.PASSWORD_MIN_LENGTH} characters`)
   .max(128)
-  .refine((value) => /[A-Z]/.test(value), "Password must contain an uppercase letter")
   .refine((value) => /[a-z]/.test(value), "Password must contain a lowercase letter")
-  .refine((value) => /[0-9]/.test(value), "Password must contain a number")
-  .refine((value) => /[!@#$%^&*(),.?":{}|<>]/.test(value), "Password must contain a special character");
+  .refine((value) => /[0-9]/.test(value), "Password must contain a number");
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(20).optional(),
@@ -44,22 +42,42 @@ export const registrationTokenSchema = z.object({
 });
 export type RegistrationTokenInput = z.infer<typeof registrationTokenSchema>;
 
-export const registrationSchema = z.object({
-  token: z.string().min(32).max(256),
-  email: registrationEmail,
-  firstName: registrationName,
-  middleName: z.preprocess((value) => value === "" ? undefined : value, registrationName.optional()),
-  lastName: registrationName,
-  suffix: z.preprocess((value) => value === "" ? undefined : value, z.string().trim().max(20).optional()),
-  employeeId: z.string().trim().min(2).max(64).regex(/^[A-Za-z0-9_-]+$/),
-  collegeId: z.string().uuid(),
-  departmentId: z.string().uuid(),
-  password: strongPasswordSchema,
-  confirmPassword: strongPasswordSchema,
-}).refine((value) => value.password === value.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
+export const registrationSchema = z
+  .object({
+    token: z.string().min(32).max(256),
+    email: registrationEmail,
+    firstName: registrationName,
+    middleName: z.preprocess((value) => value === "" ? undefined : value, registrationName.optional()),
+    lastName: registrationName,
+    suffix: z.preprocess((value) => value === "" ? undefined : value, z.string().trim().max(20).optional()),
+    employeeId: z.string().trim().min(2).max(64).regex(/^[A-Za-z0-9_-]+$/),
+    campusId: z.string().uuid(),
+    // College / program / office are optional. Only the campus is required
+    // so campus-only registrations (e.g. non-teaching staff not yet assigned
+    // to a unit) are still possible.
+    collegeId: z.preprocess(
+      (value) => (value === "" || value === undefined ? undefined : value),
+      z.string().uuid().optional(),
+    ),
+    programId: z.preprocess(
+      (value) => (value === "" || value === undefined ? undefined : value),
+      z.string().uuid().optional(),
+    ),
+    officeId: z.preprocess(
+      (value) => (value === "" || value === undefined ? undefined : value),
+      z.string().uuid().optional(),
+    ),
+    password: strongPasswordSchema,
+    confirmPassword: strongPasswordSchema,
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  })
+  .refine((value) => !(value.programId && value.officeId), {
+    message: "Choose either a program (faculty) or an office (staff), not both",
+    path: ["officeId"],
+  });
 export type RegistrationInput = z.infer<typeof registrationSchema>;
 
 export const registrationRequestSchema = z.object({

@@ -1,0 +1,26 @@
+flowchart TD
+    A(["User opens a dashboard"]) --> B{"Dashboard type"}
+
+    B -- Admin dashboard --> C["Real-time aggregate KPIs"]
+    C --> C1["Document counts / storage totals"]
+    C --> C2["Recent activity (actor, date,<br/>time, IP)"]
+    C --> C3["Recent Requests table<br/>(was Recent Submissions)"]
+    C --> C4["Per-set accreditation analytics"]
+    C2 --> C5["Live recent activity feed<br/>auto-refresh polling"]
+
+    B -- User dashboard --> D["Personal overview"]
+    D --> D1["My document stats"]
+    D --> D2["My recent requests (replaces<br/>dead 'Upcoming Deadlines' card)"]
+    D --> D3["My tasks summary"]
+    D --> D4["Notifications"]
+
+    B -- Accreditation analytics --> E["Per area set<br/>(AACCUP / ISO / CERT)"]
+    E --> E1["Area coverage %"]
+    E --> E2["Submissions by status<br/>(PENDING/APPROVED/REJECTED/<br/>NEEDS_REVISION)"]
+    E --> E3["Task completion"]
+    E --> E4["ChartCard components + Recharts"]
+
+    C1 --> REFRESH["Poll/auto-refresh interval"]
+    D1 --> REFRESH
+    E1 --> REFRESH
+    REFRESH --> A

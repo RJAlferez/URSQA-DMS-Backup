@@ -1,0 +1,41 @@
+flowchart TD
+    A(["Server boots (entrypoint)"]) --> B["Apply Prisma migrations<br/>(migrate deploy - forward only)"]
+    B --> C["Run seed (idempotent):<br/>119 permissions, 7 roles,<br/>role-permission bindings,<br/>bootstrap admin + ROOT,<br/>config engine, folder templates"]
+    C --> D["ensureBucket: create urs-dms bucket"]
+    D --> E["Start BullMQ workers (queue names)"]
+    E --> Q1["folderCopy"]
+    E --> Q2["folderZip"]
+    E --> Q3["emailDelivery"]
+    E --> Q4["documentThumbnail"]
+    E --> Q5["maintenance"]
+
+    Q1 --> R["Copy folders - enqueue job<br/>processed in-process (no worker yet)"]
+    Q2 --> R2["Zip folder - enqueue job<br/>-> downloadable archive"]
+    Q3 --> R3["Transactional email via<br/>EMAIL_PROVIDER (SMTP)"]
+    Q4 --> R4["Lazy preview/thumbnail:<br/>image/PDF/video -> webp/png"]
+    Q5 --> R5["Maintenance runner:<br/>storage check, cleanup,<br/>recycle-bin sweep (retention pending)"]
+
+    D --> S["Health endpoint /api/v1/health"]
+    S --> S1{"Probe services"}
+    S1 --> PG["database: SELECT 1 (latency)"]
+    S1 --> MI["minio: bucket exists check"]
+    S1 --> RD["redis: PING (latency)"]
+    S1 --> QU["queues: waiting/active/failed counts"]
+    PG --> OK(["status ok / degraded"])
+    MI --> OK
+    RD --> OK
+    QU --> OK
+
+    subgraph STORAGE["MinIO adapter (lib/storage.ts)"]
+        ST1["Signing client for PUBLIC endpoint<br/>MINIO_PUBLIC_ENDPOINT"]
+        ST2["Internal client MINIO_ENDPOINT"]
+        ST3["presignUpload / presignDownload"]
+        ST4["statObject / getObjectStream"]
+        ST5["Bucket ensured on first boot"]
+    end
+
+    A --> STORAGE
+    ST1 --> ST3
+    ST2 --> ST4
+    ST3 --> P1["Presigned URLs signed for the EXACT host<br/>browser reaches (tunnel-safe, no host rewrite)<br/>-> no 403 SignatureDoesNotMatch"]
+    P1 --> P2(["Browser <-> MinIO direct streaming"])

@@ -1,0 +1,28 @@
+flowchart TD
+    A(["User drags file / clicks Upload"]) --> B["Client infers MIME type<br/>reject if not allowlisted"]
+    B --> C["Compute SHA-256 checksum<br/>(WebCrypto, streaming)"]
+    C --> D["POST /api/v1/documents<br/>{title, description, classification,<br/>departmentId, folderId, tags}"]
+    D --> E["Validate (zod) + assertUploadPolicy<br/>config: upload.max_size_bytes +<br/>upload.allowed_file_types"]
+    E -- "Over size / bad type" --> F["400 validation error surfaced"]
+    F --> A
+    E -- OK --> G["Prisma txn: create Document row<br/>bind workflow instance (if scope matches)"]
+    G --> H["Return document id"]
+    H --> I["POST /documents/:id/version<br/>{filename, mimeType, sizeBytes, checksum}"]
+    I --> J{"Checksum already exists<br/>for this document?"}
+    J -- Yes --> K["409 Conflict - duplicate version"]
+    K --> A
+    J -- No --> L["Config policy check again"]
+    L --> M["Next version number<br/>presignUpload -> presigned PUT URL<br/>(signed for MINIO_PUBLIC_ENDPOINT)"]
+    M --> N["Create DocumentVersion row<br/>(canonical object key, filename, checksum)"]
+    N --> O["Write audit: version added"]
+    O --> P(["Browser receives presigned PUT URL"])
+    P --> Q["PUT file bytes directly to MinIO<br/>(XHR streaming, no API buffering)"]
+    Q --> R{"Upload succeeded?"}
+    R -- No --> S["Retry / discard partial object"]
+    R -- Yes --> T["POST /documents/:id/versions/:vid/verify"]
+    T --> U["Server stats object<br/>compare stored size + SHA-256"]
+    U -- "Mismatch" --> V["verify false - mark corrupt<br/>(SMK_corrupt pattern)"]
+    U -- "Match" --> W["verified: true<br/>audit upload.verified"]
+    W --> X["Refetch document detail"]
+    X --> Y["Enqueue documentThumbnail job<br/>(image/pdf/video preview)<br/>notify owner on success"]
+    Y --> Z(["File appears in My Documents"])

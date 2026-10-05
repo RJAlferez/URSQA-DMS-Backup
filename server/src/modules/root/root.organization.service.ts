@@ -17,25 +17,25 @@ import {
 import type { ListOrganizationQuery } from "@/modules/root/root.organization.validator";
 
 // =============================================================================
-// URS-DMS â€” Root Â· Organization Management Engine service (Sprint 7.4.2)
+// URS-DMS — Root · Organization Management Engine service (Sprint 7.4.2)
 // -----------------------------------------------------------------------------
-// Business logic + RBAC re-checks (defence in depth â€” the route layer's
+// Business logic + RBAC re-checks (defence in depth — the route layer's
 // requirePermission(...) is the first gate; the service re-asserts the same
-// permission so a wiring mistake can never bypass RBAC). No role checks â€”
+// permission so a wiring mistake can never bypass RBAC). No role checks —
 // only permission codes.
 //
 // RBAC model (matches the catalog in permissions.constants.ts):
-//   - organization.read     â†’ list / detail / tree / versions
-//   - organization.create   â†’ create
-//   - organization.update   â†’ update
-//   - organization.archive  â†’ archive + restore
-//   - organization.rollback â†’ roll back to a version snapshot
+//   - organization.read     → list / detail / tree / versions
+//   - organization.create   → create
+//   - organization.update   → update
+//   - organization.archive  → archive + restore
+//   - organization.rollback → roll back to a version snapshot
 // All codes are ROOT-only by construction (ROOT_ONLY_CODES in
 // roles.constants.ts), and the router additionally requires role ROOT.
 //
 // Configuration Engine integration: every mutation writes a version snapshot
-// (organization_versions) inside the same transaction as the record write â€”
-// the same version â†’ rollback lifecycle the engine applies to configuration
+// (organization_versions) inside the same transaction as the record write —
+// the same version → rollback lifecycle the engine applies to configuration
 // values. Rollback replays an older snapshot's fields onto the record and
 // appends a ROLLED_BACK snapshot.
 // =============================================================================
@@ -54,6 +54,7 @@ export interface OrgCreateInput {
   code: string;
   description?: string | null;
   displayOrder?: number;
+  campusId?: string | null;
   collegeId?: string | null;
   departmentId?: string | null;
   headId?: string | null;
@@ -65,6 +66,7 @@ export interface OrgUpdateInput {
   code?: string;
   description?: string | null;
   displayOrder?: number;
+  campusId?: string | null;
   collegeId?: string | null;
   departmentId?: string | null;
   headId?: string | null;
@@ -102,16 +104,21 @@ function assertCanRollback(actor: Actor): void {
 }
 
 // -----------------------------------------------------------------------------
-// Parent validation â€” a parent must exist AND be live (archived parents are
+// Parent validation — a parent must exist AND be live (archived parents are
 // rejected with a friendly message rather than a FK error).
 // -----------------------------------------------------------------------------
 interface ParentRefs {
+  campusId?: string | null;
   collegeId?: string | null;
   departmentId?: string | null;
   headId?: string | null;
 }
 
 async function assertParentsValid(refs: ParentRefs): Promise<void> {
+  if (refs.campusId) {
+    const ok = await repo.parentExists("campus", refs.campusId);
+    if (!ok) throw new BadRequestError("The referenced campus does not exist or is archived");
+  }
   if (refs.collegeId) {
     const ok = await repo.parentExists("college", refs.collegeId);
     if (!ok) throw new BadRequestError("The referenced college does not exist or is archived");
@@ -141,6 +148,7 @@ export async function listRecords(
     {
       q: query.q,
       includeArchived: query.includeArchived,
+      campusId: query.campusId,
       collegeId: query.collegeId,
       departmentId: query.departmentId,
     },
@@ -195,6 +203,7 @@ export async function createRecord(
       code: input.code,
       description: input.description ?? null,
       displayOrder: input.displayOrder ?? 0,
+      campusId: input.campusId ?? null,
       collegeId: input.collegeId ?? null,
       departmentId: input.departmentId ?? null,
       headId: input.headId ?? null,
@@ -239,6 +248,7 @@ export async function updateRecord(
     throw new ConflictError(`A ${cfg.label.toLowerCase()} with this code already exists`);
   }
   await assertParentsValid({
+    campusId: input.campusId !== undefined ? input.campusId : existing.campusId,
     collegeId: input.collegeId !== undefined ? input.collegeId : existing.collegeId,
     departmentId: input.departmentId !== undefined ? input.departmentId : existing.departmentId,
     headId: input.headId !== undefined ? input.headId : existing.headId,
@@ -253,6 +263,7 @@ export async function updateRecord(
       description:
         input.description !== undefined ? input.description : existing.description,
       displayOrder: input.displayOrder ?? existing.displayOrder,
+      campusId: input.campusId !== undefined ? input.campusId : existing.campusId,
       collegeId: input.collegeId !== undefined ? input.collegeId : existing.collegeId,
       departmentId:
         input.departmentId !== undefined ? input.departmentId : existing.departmentId,
@@ -335,7 +346,7 @@ export async function restoreRecord(
 }
 
 // -----------------------------------------------------------------------------
-// listVersions / rollbackRecord â€” Configuration Engine integration
+// listVersions / rollbackRecord — Configuration Engine integration
 // -----------------------------------------------------------------------------
 export async function listVersions(
   entity: OrgEntityName,
@@ -390,78 +401,73 @@ export async function rollbackRecord(
 }
 
 // -----------------------------------------------------------------------------
-// getOrganizationTree â€” colleges â†’ departments â†’ offices/programs (+ orphans)
+// getOrganizationTree — campus → college → department → offices/programs (+
+// orphans under Unassigned).
 // -----------------------------------------------------------------------------
 export async function getOrganizationTree(actor: Actor): Promise<OrganizationTree> {
   assertCanRead(actor);
   const raw = await repo.getTreeData();
 
-  const baseNode = () => ({
+  type TreeNode = OrganizationTree["campuses"][number];
+  const baseNode = (): TreeNode => ({
     id: "",
     name: "",
     code: "",
     description: null,
     level: null,
-    departments: [] as OrganizationTree["colleges"][number]["departments"],
-    offices: [] as OrganizationTree["colleges"][number]["offices"],
-    programs: [] as OrganizationTree["colleges"][number]["programs"],
+    colleges: [],
+    departments: [],
+    offices: [],
+    programs: [],
   });
-  const deptNode = (d: repo.TreeDeptRow) => ({ ...baseNode(), id: d.id, name: d.name, code: d.code, description: d.description });
-  const officeNode = (o: repo.TreeOfficeRow) => ({ ...baseNode(), id: o.id, name: o.name, code: o.code, description: o.description });
-  const programNode = (p: repo.TreeProgramRow) => ({ ...baseNode(), id: p.id, name: p.name, code: p.code, description: p.description, level: p.level });
+  const deptNode = (d: repo.TreeDeptRow): TreeNode => ({ ...baseNode(), id: d.id, name: d.name, code: d.code, description: d.description });
+  const officeNode = (o: repo.TreeOfficeRow): TreeNode => ({ ...baseNode(), id: o.id, name: o.name, code: o.code, description: o.description });
+  const programNode = (p: repo.TreeProgramRow): TreeNode => ({ ...baseNode(), id: p.id, name: p.name, code: p.code, description: p.description, level: p.level });
+  const collegeNode = (c: repo.TreeCollegeRow): TreeNode => ({ ...baseNode(), id: c.id, name: c.name, code: c.code, description: c.description });
 
-  const colleges: OrganizationTree["colleges"] = raw.colleges.map((c) => ({
+  // Campus nodes (root level) with their own colleges arrays.
+  const campuses: TreeNode[] = raw.campuses.map((c) => ({
+    ...baseNode(),
     id: c.id,
     name: c.name,
     code: c.code,
     description: c.description,
-    level: null,
-    departments: [],
-    offices: [],
-    programs: [],
   }));
-  const collegeMap = new Map(colleges.map((c) => [c.id, c]));
+  const campusMap = new Map(campuses.map((c) => [c.id, c]));
 
+  // College nodes; attach to their campus (or Unassigned).
+  const collegeMap = new Map<string, TreeNode>();
+  for (const c of raw.colleges) {
+    const node = collegeNode(c);
+    collegeMap.set(c.id, node);
+  }
   const unassigned = { ...baseNode(), name: "Unassigned" };
+  for (const c of raw.colleges) {
+    const node = collegeMap.get(c.id)!;
+    if (c.campusId && campusMap.has(c.campusId)) campusMap.get(c.campusId)!.colleges.push(node);
+    else unassigned.colleges.push(node);
+  }
 
-  // 1. Every live department gets a node; children attach by departmentId.
-  const deptNodes = new Map<string, OrganizationTree["colleges"][number]>();
-  const allDeptNodes: OrganizationTree["colleges"][number][] = [];
+  // Department nodes; attach to their college (or Unassigned).
+  const deptNodes = new Map<string, TreeNode>();
   for (const d of raw.departments) {
     const node = deptNode(d);
     deptNodes.set(d.id, node);
-    allDeptNodes.push(node);
+    if (d.collegeId && collegeMap.has(d.collegeId)) collegeMap.get(d.collegeId)!.departments.push(node);
+    else unassigned.departments.push(node);
   }
 
-  // 2. Offices / programs â†’ department node, else college node, else Unassigned.
+  // Offices / programs → department node, else college node, else Unassigned.
   for (const o of raw.offices) {
-    if (o.departmentId && deptNodes.has(o.departmentId)) {
-      deptNodes.get(o.departmentId)!.offices.push(officeNode(o));
-    } else if (o.collegeId && collegeMap.has(o.collegeId)) {
-      collegeMap.get(o.collegeId)!.offices.push(officeNode(o));
-    } else {
-      unassigned.offices.push(officeNode(o));
-    }
+    if (o.departmentId && deptNodes.has(o.departmentId)) deptNodes.get(o.departmentId)!.offices.push(officeNode(o));
+    else if (o.collegeId && collegeMap.has(o.collegeId)) collegeMap.get(o.collegeId)!.offices.push(officeNode(o));
+    else unassigned.offices.push(officeNode(o));
   }
   for (const p of raw.programs) {
-    if (p.departmentId && deptNodes.has(p.departmentId)) {
-      deptNodes.get(p.departmentId)!.programs.push(programNode(p));
-    } else if (p.collegeId && collegeMap.has(p.collegeId)) {
-      collegeMap.get(p.collegeId)!.programs.push(programNode(p));
-    } else {
-      unassigned.programs.push(programNode(p));
-    }
+    if (p.departmentId && deptNodes.has(p.departmentId)) deptNodes.get(p.departmentId)!.programs.push(programNode(p));
+    else if (p.collegeId && collegeMap.has(p.collegeId)) collegeMap.get(p.collegeId)!.programs.push(programNode(p));
+    else unassigned.programs.push(programNode(p));
   }
 
-  // 3. Department nodes â†’ their live college, else Unassigned.
-  for (const node of allDeptNodes) {
-    const d = raw.departments.find((x) => x.id === node.id)!;
-    if (d.collegeId && collegeMap.has(d.collegeId)) {
-      collegeMap.get(d.collegeId)!.departments.push(node);
-    } else {
-      unassigned.departments.push(node);
-    }
-  }
-
-  return { colleges, unassigned };
+  return { campuses, unassigned };
 }

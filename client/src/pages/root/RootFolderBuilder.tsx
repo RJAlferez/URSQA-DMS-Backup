@@ -1147,7 +1147,7 @@ export default function RootFolderBuilder() {
   const isMutating = mutationKey !== null
 
   return (
-    <div className="min-w-0 p-4 sm:p-6 lg:p-8">
+    <div className="min-w-0 content-padding">
       <PageHeader
         title="Dynamic Folder Builder"
         description="Design, version, and assign the folder structures used across the platform"
@@ -1196,7 +1196,7 @@ export default function RootFolderBuilder() {
 
         <TabsContent value="templates" className="mt-0">
           <Card className="mb-4">
-            <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+            <CardContent className="toolbar-padding flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input

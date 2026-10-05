@@ -97,13 +97,13 @@ Write-Host 'Updated .env MINIO_PUBLIC_ENDPOINT'
 
 # Keep browser origins and the local Pages build aligned with the fresh tunnels.
 $envContent = [IO.File]::ReadAllText("$root\.env")
-$envContent = [regex]::Replace($envContent, '(?m)^CLIENT_URL=.*$', "CLIENT_URL=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.pages.dev,$appUrl")
-$envContent = [regex]::Replace($envContent, '(?m)^MINIO_CORS_ORIGINS=.*$', "MINIO_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.pages.dev,$appUrl")
+$envContent = [regex]::Replace($envContent, '(?m)^CLIENT_URL=.*$', "CLIENT_URL=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.online,$appUrl")
+$envContent = [regex]::Replace($envContent, '(?m)^MINIO_CORS_ORIGINS=.*$', "MINIO_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.online,$appUrl")
 if ($envContent -notmatch '(?m)^CLIENT_URL=') {
-    $envContent = "$envContent`nCLIENT_URL=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.pages.dev,$appUrl"
+    $envContent = "$envContent`nCLIENT_URL=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.online,$appUrl"
 }
 if ($envContent -notmatch '(?m)^MINIO_CORS_ORIGINS=') {
-    $envContent = "$envContent`nMINIO_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.pages.dev,$appUrl"
+    $envContent = "$envContent`nMINIO_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://urs-dms.online,$appUrl"
 }
 [IO.File]::WriteAllText("$root\.env", $envContent)
 [IO.File]::WriteAllText("$root\client\.env", "VITE_API_BASE=$backendUrl/api/v1`n")

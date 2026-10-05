@@ -40,6 +40,21 @@ export interface CreateAnnouncementInput {
   priority?: NotificationPriority;
   actionUrl?: string | null;
   metadata?: Record<string, unknown>;
+  audience?: {
+    campusIds?: string[];
+    collegeIds?: string[];
+    departmentIds?: string[];
+    programIds?: string[];
+  };
+}
+
+export type NotificationFrequency = "IMMEDIATE" | "DAILY" | "WEEKLY" | "MONTHLY";
+
+export interface NotificationPreferenceView {
+  emailEnabled: boolean;
+  frequency: NotificationFrequency;
+  deadlineHours: number;
+  timezone: string;
 }
 
 /** Programmatic emit surface for other modules (module-agnostic). */

@@ -1,0 +1,32 @@
+flowchart TD
+    A(["User opens a document / folder"]) --> B{"Open, Download, or Preview?"}
+
+    B -- Open details --> C["GET /documents/:id<br/>+ activity + versions + tags"]
+    C --> C1(["Details panel: metadata, version history,<br/>activity feed, permissions"])
+    C1 --> D
+
+    B -- Download --> E["GET /documents/:id/download"]
+    E --> F["AuthZ: documents.read + owner/shared/dept scope"]
+    F -- Denied --> G["403 / 404"]
+    F -- Allowed --> H["Server presigns GET URL for<br/>current version (MINIO_PUBLIC_ENDPOINT)"]
+    H --> I["Browser streams from MinIO<br/>saved as file"]
+
+    B -- Preview --> J["GET /documents/:id/preview (same as download)<br/>or lazy preview: image / PDF / video"]
+    J --> K{"File type?"}
+    K -- PDF --> L["Browser embed / pdf renderer"]
+    K -- Image --> M["<img> lazy load"]
+    K -- Video/audio --> N["<video>/<audio> native playback"]
+    K -- Docx/Office --> O["Server-side preview / no inline<br/>(download instead)"]
+    L --> P
+    M --> P
+    N --> P
+    O --> E
+
+    P(["Interactive preview modal<br/>with version history side panel"])
+
+    D{"User wants to share?"} -- Yes --> Q["POST /documents/:id/share"]
+    Q --> R["Select user + READ/WRITE + expiry"]
+    R --> S{"Recipient has access?"}
+    S -- No --> T["Add DocumentShare row<br/>notification to recipient"]
+    T --> U(["Recipient sees doc under Requested Documents"])
+    D -- No --> V(["End"])

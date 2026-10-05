@@ -1,0 +1,34 @@
+flowchart TD
+    A(["User opens Login"]) --> B["Enter identifier (email) + password"]
+    B --> C["POST /api/v1/auth/login"]
+    C --> D{"Body valid?<br/>(zod schema)"}
+    D -- No --> E["400 VALIDATION_ERROR<br/>field messages shown"]
+    E --> B
+    D -- Yes --> F["Rate limiter check<br/>(authLimiter)"]
+    F -- "Over limit" --> G["429 Too Many Requests<br/>retry later"]
+    G --> A
+    F -- OK --> H["Find user by identifier"]
+    H --> I{"User exists?"}
+    I -- No --> J["Generic invalid credentials<br/>(no user enumeration)"]
+    J --> Z["Fail counter increments<br/>per identifier"]
+    I -- Yes --> K{"User status?"}
+    K -- "LOCKED / SUSPENDED /<br/>INACTIVE" --> L["403 account unavailable"]
+    L --> A
+    K -- ACTIVE --> M{"Password matches?<br/>(Argon2 verify)"}
+    M -- No --> N{"Failed attempts >= 5?"}
+    N -- Yes --> O["Lock account 15 min<br/>(LOCK_DURATION_MIN)"]
+    N -- No --> P["Increment failed counter"]
+    P --> B
+    M -- Yes --> Q["Reset failed-attempt counter<br/>issue ACCESS (15m) + REFRESH (7d) JWTs<br/>create Session record"]
+    Q --> R["Return user + permissions<br/>(RBAC permission codes loaded)"]
+    R --> S["Client stores tokens<br/>(refresh in cookie)"]
+    S --> T{"Access token expired?<br/>API 401"}
+    T -- No --> U["Proceed to app<br/>role-based UI + gating"]
+    T -- Yes --> V["POST /auth/refresh<br/>rotation: old refresh invalidated"]
+    V --> W{"Refresh valid?"}
+    W -- No --> X["Force re-login"]
+    X --> A
+    W -- Yes --> Q
+    U --> Y["POST /auth/logout"]
+    Y --> AA["Revoke session + refresh<br/>write audit auth.logout"]
+    AA --> A

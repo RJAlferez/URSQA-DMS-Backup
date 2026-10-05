@@ -12,13 +12,13 @@ interface ChartCardProps {
 export function ChartCard({ title, description, children, className }: ChartCardProps) {
   return (
     <Card className={cn("border-border/70 shadow-soft", className)}>
-      <CardHeader className="px-5 pt-5 pb-3">
+      <CardHeader className="pb-3">
         <CardTitle className="text-[15px] font-semibold text-gray-900">{title}</CardTitle>
         {description && (
           <p className="text-[13px] text-gray-500 mt-0.5">{description}</p>
         )}
       </CardHeader>
-      <CardContent className="px-5 pb-5">{children}</CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
   )
 }

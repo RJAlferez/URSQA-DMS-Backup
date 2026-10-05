@@ -71,6 +71,8 @@ function toListItem(row: SubmissionWithRelations): AaccupSubmissionListItem {
     isCurrent: row.isCurrent,
     submittedAt: row.submittedAt,
     reviewedAt: row.reviewedAt,
+    withdrawnAt: row.withdrawnAt,
+    withdrawalReason: row.withdrawalReason,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -120,6 +122,24 @@ export async function updateRemarks(
   const row = await prisma.aaccupSubmission.update({
     where: { id },
     data: { remarks, updatedAt: new Date() },
+    include: SUBMISSION_INCLUDE,
+  });
+  return toDetail(row);
+}
+
+export async function withdraw(
+  id: string,
+  reason: string | null,
+): Promise<AaccupSubmissionDetail> {
+  const row = await prisma.aaccupSubmission.update({
+    where: { id },
+    data: {
+      status: "WITHDRAWN",
+      isCurrent: false,
+      withdrawnAt: new Date(),
+      withdrawalReason: reason,
+      updatedAt: new Date(),
+    },
     include: SUBMISSION_INCLUDE,
   });
   return toDetail(row);

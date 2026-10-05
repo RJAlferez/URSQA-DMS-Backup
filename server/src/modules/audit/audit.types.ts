@@ -9,7 +9,7 @@ export type AuditCategory =
 
 export type AuditSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AuditResult = "SUCCESS" | "FAILED" | "DENIED";
-export type AuditStatus = "SUCCESS" | "FAILED";
+export type AuditStatus = "SUCCESS" | "FAILED" | "DENIED";
 export type AuditModule = string;
 
 export interface AuditActor {

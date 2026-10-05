@@ -1,0 +1,60 @@
+flowchart LR
+    subgraph CLIENTS["Clients"]
+        U1["Browser - Admin Portal"]
+        U2["Browser - User Portal"]
+        U3["Cloudflare Pages / Tunnel (remote)"]
+    end
+
+    subgraph VITE["Vite Dev / Build (5173)"]
+        REACT["React 18 + TypeScript<br/>shadcn/Radix UI + Tailwind"]
+        HTTP["http.ts API client<br/>VITE_API_BASE / /api proxy"]
+    end
+
+    subgraph API["URS-DMS Server (Express) :4000"]
+        AUTH["auth - login/session/register<br/>password reset"]
+        USERS["users - CRUD, profile, photo"]
+        DOCS["documents + versions + folders<br/>share / favorite / recycle"]
+        REQUESTS["requests - borrow workflow"]
+        AACCUP["aaccup - areas, requirements<br/>submissions, review, tasks"]
+        ADMINM["admin - dashboards, user mgmt"]
+        ROOT["root - configuration engine<br/>builders, org, wizard"]
+        NOTIF["notifications"]
+        AUDIT["audit log"]
+        EMAIL["email delivery (SMTP)"]
+        MID["middlewares<br/>authenticate / authorize (RBAC)<br/>rate limit / validate (zod)"]
+    end
+
+    subgraph DATA["Data Stores"]
+        PG[("PostgreSQL 16<br/>urs-postgres :5432")]
+        MINIO[("MinIO :9000/:9001<br/>urs-dms bucket")]
+        REDIS[("Redis :6380<br/>BullMQ queues + sessions")]
+    end
+
+    subgraph JOBS["Background Workers (BullMQ)"]
+        Q1["folderCopy"]
+        Q2["folderZip"]
+        Q3["emailDelivery"]
+        Q4["documentThumbnail"]
+        Q5["maintenance"]
+    end
+
+    U1 --> VITE
+    U2 --> VITE
+    U3 --> VITE
+    VITE --> API
+    AUTH --> MID
+    USERS --> MID
+    DOCS --> MID
+    REQUESTS --> MID
+    AACCUP --> MID
+    ADMINM --> MID
+    ROOT --> MID
+    NOTIF --> MID
+    AUDIT --> MID
+    EMAIL --> MID
+    MID --> PG
+    MID --> MINIO
+    MID --> REDIS
+    JOBS --> REDIS
+    MINIO -. "presigned PUT/GET" .-> VITE
+    API --> EMAIL

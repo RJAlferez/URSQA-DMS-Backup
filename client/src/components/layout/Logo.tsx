@@ -22,7 +22,12 @@ async function fetchLogoUrl(): Promise<string | null> {
     const data = await resp.json()
     const url = data?.data?.url ?? null
     if (url) {
-      try { localStorage.setItem(LOGO_CACHE_KEY, url); localStorage.setItem(LOGO_CACHE_TIME_KEY, String(Date.now())) } catch {}
+      try {
+        localStorage.setItem(LOGO_CACHE_KEY, url)
+        localStorage.setItem(LOGO_CACHE_TIME_KEY, String(Date.now()))
+      } catch {
+        // The logo is still usable for this render when storage is unavailable.
+      }
     }
     return url
   } catch {

@@ -109,7 +109,7 @@ export default function RootDashboard() {
 
   if (loading && !overview) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div className="content-padding">
         <PageHeader title="Platform Overview" description="System administrator console" />
         <div className="min-h-[320px] flex items-center justify-center">
           <div className="w-8 h-8 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
@@ -120,7 +120,7 @@ export default function RootDashboard() {
 
   if (error && !overview) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8">
+      <div className="content-padding">
         <PageHeader title="Platform Overview" description="System administrator console" />
         <Card className="border-border/70 shadow-soft">
           <CardContent className="p-8 flex flex-col items-center text-center gap-4">
@@ -141,7 +141,7 @@ export default function RootDashboard() {
   const { platform, configuration, storage, database, minio, api, queue } = overview
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Platform Overview"
         description={`System administrator console · ${platform.environment} · v${platform.version}`}
@@ -153,7 +153,7 @@ export default function RootDashboard() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 responsive-gap mb-6 lg:mb-8">
         <StatCard
           title="Platform Status"
           value={platform.status === "ok" ? "Operational" : platform.status}
@@ -176,18 +176,17 @@ export default function RootDashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 responsive-gap mb-6 lg:mb-8">
         {(
           [
             { key: "AACCUP", label: "AACCUP", bg: "bg-amber-50", text: "text-amber-600" },
-            { key: "ISO", label: "ISO", bg: "bg-primary-50", text: "text-primary-600" },
-            { key: "CERT", label: "Certification", bg: "bg-emerald-50", text: "text-emerald-600" },
+            { key: "ISO", label: "ISO 21001:2025", bg: "bg-primary-50", text: "text-primary-600" },
           ] as const
         ).map(({ key, label, bg, text }) => {
           const stats = accreditation?.aaccup.byAreaSet[key]
           return (
             <Card key={key} className="border-border/70 shadow-soft">
-              <CardContent className="p-4 md:p-5">
+              <CardContent className="p-5 md:p-6">
                 <div className="flex items-center justify-between">
                   <div className={`w-9 h-9 md:w-11 md:h-11 rounded-lg ${bg} flex items-center justify-center ${text}`}>
                     <Award className="w-5 h-5" />
@@ -215,7 +214,7 @@ export default function RootDashboard() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft">
           <CardHeader className="pb-2">
             <CardTitle className="text-[14px] flex items-center gap-2">
@@ -329,7 +328,7 @@ export default function RootDashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft">
           <CardHeader className="pb-2">
             <CardTitle className="text-[14px]">Active Modules</CardTitle>

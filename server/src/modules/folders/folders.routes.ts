@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { asyncHandler } from "@/utils/asyncHandler";
 import { authenticate } from "@/middlewares/authenticate";
 import { requirePermission } from "@/middlewares/authorize";
@@ -19,6 +20,8 @@ import {
   resolveMyFolderStructureHandler,
   updateFolderHandler,
 } from "@/modules/folders/folders.controller";
+import { folderShareSchema, folderShareUpdateSchema } from "@/modules/folders/folderSharing.validator";
+import { listFolderSharesHandler, shareFolderHandler, updateFolderShareHandler, removeFolderShareHandler, listSharedWithMeHandler, listShareableUsersHandler } from "@/modules/folders/folderSharing.controller";
 import {
   copyFolderHandler,
   downloadFolderZipHandler,
@@ -42,6 +45,9 @@ import {
 export const foldersRouter: Router = Router();
 
 foldersRouter.use(authenticate);
+
+foldersRouter.get("/shared-with-me", requirePermission("folders.read"), asyncHandler(listSharedWithMeHandler));
+foldersRouter.get("/shareable-users", requirePermission("folders.read"), asyncHandler(listShareableUsersHandler));
 
 // GET /folders/resolve — resolved repository structure for the current user
 // (Sprint 7.4.3: Folder Builder template assigned to DEPARTMENT → COLLEGE →
@@ -88,6 +94,11 @@ foldersRouter.get(
   validateParams(folderIdParamSchema),
   asyncHandler(getFolderHandler),
 );
+
+foldersRouter.get("/:id/shares", requirePermission("folders.read"), validateParams(folderIdParamSchema), asyncHandler(listFolderSharesHandler));
+foldersRouter.post("/:id/shares", requirePermission("folders.update"), validateParams(folderIdParamSchema), validateBody(folderShareSchema), asyncHandler(shareFolderHandler));
+foldersRouter.patch("/:id/shares/:shareId", requirePermission("folders.update"), validateParams(z.object({ id: z.string().uuid(), shareId: z.string().uuid() })), validateBody(folderShareUpdateSchema), asyncHandler(updateFolderShareHandler));
+foldersRouter.delete("/:id/shares/:shareId", requirePermission("folders.update"), validateParams(z.object({ id: z.string().uuid(), shareId: z.string().uuid() })), asyncHandler(removeFolderShareHandler));
 
 // PATCH /folders/:id
 foldersRouter.patch(

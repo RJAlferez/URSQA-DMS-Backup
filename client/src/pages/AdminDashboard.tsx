@@ -10,6 +10,8 @@ import { listAllOnlineSubmissions, listOnlineTasks, type OnlineAaccupTask, type 
 import { listRequests } from "@/services/requests"
 import { listAuditEntries, type AuditEntry } from "@/services/admin"
 import type { DocumentRequest } from "@/types/domain"
+import { useAuth } from "@/context/AuthContext"
+import { hasServerPermission } from "@/lib/permissions"
 import { cn } from "@/lib/utils"
 
 interface AdminDashboardProps {
@@ -57,6 +59,11 @@ function isOverdue(task: OnlineAaccupTask, now = Date.now()): boolean {
 }
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
+  const { user } = useAuth()
+  // Department Coordinators have admin-portal access but no `audit.read`; firing
+  // the request anyway would 403 and write a PERMISSION_DENIED audit event on
+  // every dashboard load.
+  const canReadAudit = hasServerPermission(user, "audit.read")
   const [overview, setOverview] = useState<SectionState<DashboardOverview>>({ data: null, error: false })
   const [submissions, setSubmissions] = useState<SectionState<OnlineSubmissionListItem[]>>({ data: null, error: false })
   const [requests, setRequests] = useState<SectionState<DocumentRequest[]>>({ data: null, error: false })
@@ -64,14 +71,21 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [activity, setActivity] = useState<SectionState<AuditEntry[]>>({ data: null, error: false })
 
   useEffect(() => {
-    void Promise.all([
+    const pending: Promise<unknown>[] = [
       getDashboardOverview().then((data) => setOverview({ data, error: false })).catch(() => setOverview({ data: null, error: true })),
       listAllOnlineSubmissions().then((data) => setSubmissions({ data, error: false })).catch(() => setSubmissions({ data: null, error: true })),
       listRequests().then((data) => setRequests({ data, error: false })).catch(() => setRequests({ data: null, error: true })),
       listOnlineTasks().then((data) => setTasks({ data, error: false })).catch(() => setTasks({ data: null, error: true })),
-      listAuditEntries({ page: 1, pageSize: 8 }).then((page) => setActivity({ data: page.items, error: false })).catch(() => setActivity({ data: null, error: true })),
-    ])
-  }, [])
+    ]
+    if (canReadAudit) {
+      pending.push(
+        listAuditEntries({ page: 1, pageSize: 8 }).then((page) => setActivity({ data: page.items, error: false })).catch(() => setActivity({ data: null, error: true })),
+      )
+    } else {
+      setActivity({ data: [], error: false })
+    }
+    void Promise.all(pending)
+  }, [canReadAudit])
 
   const pendingSubmissions = submissions.data?.filter((s) => s.status === "PENDING").length ?? 0
   const pendingRequests = requests.data?.filter((r) => r.status === "Pending").length ?? 0
@@ -98,12 +112,12 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const nav = (page: string, query?: Record<string, string>) => onNavigate(page, query)
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader title="Good morning, Admin" description="Review what needs attention and monitor accreditation progress." />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 cursor-pointer" onClick={() => nav("submissions", { tab: "submissions", status: "PENDING" })}>
-          <CardContent className="p-4 md:p-5">
+          <CardContent className="p-5 md:p-6">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-primary-50 flex items-center justify-center text-primary-600">
                 <FileCheck2 className="w-5 h-5" />
@@ -115,7 +129,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </CardContent>
         </Card>
         <Card className="border-border/70 shadow-soft hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 cursor-pointer" onClick={() => nav("requests", { status: "PENDING" })}>
-          <CardContent className="p-4 md:p-5">
+          <CardContent className="p-5 md:p-6">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
                 <Send className="w-5 h-5" />
@@ -127,7 +141,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </CardContent>
         </Card>
         <Card className="border-border/70 shadow-soft hover:shadow-lift hover:-translate-y-0.5 transition-all duration-200 cursor-pointer" onClick={() => nav("aaccup", { tab: "tasks", taskFilter: "due-soon" })}>
-          <CardContent className="p-4 md:p-5">
+          <CardContent className="p-5 md:p-6">
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
                 <Clock3 className="w-5 h-5" />
@@ -150,10 +164,10 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           ) : overview.data === null ? (
             <div className="space-y-4">{[1, 2, 3].map((i) => <Skeleton key={i} variant="rectangular" className="h-12" />)}</div>
           ) : (
-            (["AACCUP", "ISO", "CERT"] as const).map((key) => {
+            (["AACCUP", "ISO"] as const).map((key) => {
               const stats = overview.data!.aaccup.byAreaSet[key]
-              const label = key === "AACCUP" ? "AACCUP" : key === "ISO" ? "ISO" : "Certification"
-              const page = key === "AACCUP" ? "aaccup" : key === "ISO" ? "iso" : "certification"
+              const label = key === "AACCUP" ? "AACCUP" : "ISO 21001:2025"
+              const page = key === "AACCUP" ? "aaccup" : "iso"
               return (
                 <div key={key}>
                   <button type="button" className="block w-full rounded-xl p-2 text-left transition hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary" onClick={() => nav(page)}>
@@ -212,7 +226,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 mb-6 lg:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">

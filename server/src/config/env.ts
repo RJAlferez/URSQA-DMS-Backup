@@ -63,6 +63,10 @@ const envSchema = z.object({
   MINIO_SECRET_KEY: z.string().default("urs_minio_secret"),
   MINIO_BUCKET: z.string().default("urs-dms"),
   MINIO_PUBLIC_ENDPOINT: z.string().url().optional(),
+  // Internal-only document converter. When unset, native browser previews
+  // continue to work while Office previews retain their existing fallback.
+  GOTENBERG_URL: z.string().url().default("http://localhost:3000"),
+  GOTENBERG_TIMEOUT_MS: integerFromString.pipe(z.number().int().min(5000).max(300000)).default(120000),
 
   RATE_LIMIT_WINDOW_MS: integerFromString.pipe(z.number().int().min(1000)).default(900000),
   RATE_LIMIT_MAX: integerFromString.pipe(z.number().int().min(1)).default(100),

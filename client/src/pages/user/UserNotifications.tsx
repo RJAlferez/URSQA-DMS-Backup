@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Bell, Check, CheckCheck, Search, FileText, GraduationCap, Inbox, Upload } from "lucide-react"
-import { PageHeader } from "@/components/layout/PageHeader"
+import { Bell, Check, CheckCheck, Search, FileText, GraduationCap, Inbox, Upload, AlertTriangle, RotateCcw, type LucideIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
@@ -12,17 +11,45 @@ import { notificationService } from "@/services/notifications"
 import { resolveNotificationRoute, buildNotificationUrl } from "@/lib/notificationNav"
 import type { Notification } from "@/types/domain"
 
-const iconMap: Record<string, React.ReactNode> = {
-  upload: <Upload className="w-4 h-4 text-blue-500" />,
-  approval: <Check className="w-4 h-4 text-emerald-500" />,
-  rejection: <Bell className="w-4 h-4 text-red-500" />,
-  request: <Inbox className="w-4 h-4 text-amber-500" />,
-  submission: <GraduationCap className="w-4 h-4 text-violet-500" />,
-  task: <Bell className="w-4 h-4 text-orange-500" />,
-  document: <FileText className="w-4 h-4 text-blue-500" />,
+interface NotificationItem {
+  id: string
+  type: Notification["type"]
+  title: string
+  message: string
+  read: boolean
+  createdAt: string
+  entity?: string
+  entityId?: string
 }
 
-const getIcon = (notif: Notification) => iconMap[notif.type] ?? <Bell className="w-4 h-4 text-gray-400" />
+interface NotificationVisual {
+  Icon: LucideIcon
+  className: string
+}
+
+const getNotificationVisual = (notif: NotificationItem): NotificationVisual => {
+  const text = `${notif.title} ${notif.message}`.toLowerCase()
+
+  if (notif.type === "rejection" && /(return|revision)/.test(text)) {
+    return { Icon: RotateCcw, className: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" }
+  }
+  if (notif.type === "rejection") {
+    return { Icon: AlertTriangle, className: "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" }
+  }
+  if (notif.type === "approval") {
+    return { Icon: Check, className: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" }
+  }
+  if (notif.type === "document" || notif.type === "upload" || notif.entity === "folder") {
+    return { Icon: notif.type === "upload" ? Upload : FileText, className: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400" }
+  }
+  if (notif.type === "request") {
+    return { Icon: Inbox, className: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" }
+  }
+  if (notif.type === "submission") {
+    return { Icon: GraduationCap, className: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400" }
+  }
+  return { Icon: Bell, className: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400" }
+}
 
 const getTimeAgo = (dateStr: string) => {
   const date = new Date(dateStr)
@@ -77,7 +104,9 @@ export default function UserNotifications() {
     try {
       await notificationService.markRead(id)
       setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
-    } catch { }
+    } catch {
+      // The local list remains unchanged when the server update fails.
+    }
   }
 
   const markAllAsRead = async () => {
@@ -85,7 +114,9 @@ export default function UserNotifications() {
     try {
       await notificationService.markAllReadForUser()
       setNotifs((prev) => prev.map((n) => ({ ...n, read: true })))
-    } catch { }
+    } catch {
+      // The local list remains unchanged when the server update fails.
+    }
   }
 
   const handleViewNotification = (notif: Notification) => {
@@ -99,47 +130,46 @@ export default function UserNotifications() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader
-        title="Notifications"
-        description={`${unreadCount} unread notification${unreadCount !== 1 ? "s" : ""}`}
-        actions={
-          unreadCount > 0 ? (
-            <Button variant="outline" onClick={markAllAsRead}>
-              <CheckCheck className="w-4 h-4 mr-2" />
-              Mark All as Read
-            </Button>
-          ) : undefined
-        }
-      />
+    <div className="content-padding">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-8">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900 dark:text-gray-100 sm:text-[26px]">Notifications</h1>
+          <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-300">
+            {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}
+          </p>
+        </div>
+        {unreadCount > 0 && (
+          <Button variant="outline" size="sm" onClick={markAllAsRead} className="h-8 rounded-lg px-3 text-xs">
+            <CheckCheck className="mr-1.5 size-3.5" />
+            Mark All as Read
+          </Button>
+        )}
+      </div>
 
-      <Card className="border-border/60 dark:border-gray-700 shadow-soft mb-6">
-            <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="relative max-w-md w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="Search notifications..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-10 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white dark:bg-gray-800 dark:hover:bg-gray-700 dark:focus:bg-gray-800"
-              />
-            </div>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
-              <TabsList className="h-9 w-full justify-start overflow-x-auto p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                <TabsTrigger value="all" className="text-[12px] h-7 px-3">All</TabsTrigger>
-                <TabsTrigger value="unread" className="text-[12px] h-7 px-3">Unread</TabsTrigger>
-                <TabsTrigger value="requests" className="text-[12px] h-7 px-3">Requests</TabsTrigger>
-                <TabsTrigger value="documents" className="text-[12px] h-7 px-3">Documents</TabsTrigger>
-                <TabsTrigger value="submissions" className="text-[12px] h-7 px-3">Submissions</TabsTrigger>
-                <TabsTrigger value="tasks" className="text-[12px] h-7 px-3">Tasks</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-4 dark:border-slate-800">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-none bg-transparent p-0 dark:bg-transparent">
+            <TabsTrigger value="all" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">All</TabsTrigger>
+            <TabsTrigger value="unread" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">Unread</TabsTrigger>
+            <TabsTrigger value="requests" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">Requests</TabsTrigger>
+            <TabsTrigger value="documents" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">Documents</TabsTrigger>
+            <TabsTrigger value="submissions" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">Submissions</TabsTrigger>
+            <TabsTrigger value="tasks" className="h-8 rounded-full border-0 bg-transparent px-4 text-xs font-medium text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-soft data-[state=active]:shadow-primary/20 data-[state=active]:ring-0 dark:hover:bg-slate-800">Tasks</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
-      <div className="space-y-2">
+      <div className="relative mb-5 w-full">
+        <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+        <Input
+          placeholder="Search notifications..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="h-9 border-slate-200 bg-white pl-8 text-sm shadow-none placeholder:text-slate-400 hover:border-slate-300 focus:bg-white dark:bg-slate-900"
+        />
+      </div>
+
+      <div className="space-y-2.5">
         {loading ? (
           <Card className="border-border/60 dark:border-gray-700 shadow-soft">
             <CardContent className="p-8 text-center">
@@ -156,50 +186,59 @@ export default function UserNotifications() {
         ) : (
           filteredNotifs.map((notif) => {
             const route = resolveNotificationRoute(notif)
+            const item: NotificationItem = notif
+            const { Icon, className: iconClassName } = getNotificationVisual(item)
             return (
               <Card
                 key={notif.id}
                 onDoubleClick={() => handleViewNotification(notif)}
                 title={route ? "Double-click to view" : undefined}
                 className={cn(
-                  "border-border/60 dark:border-gray-700 shadow-soft transition-all cursor-pointer",
-                  !notif.read && "bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary"
+                  "bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 border-l-4 border-l-transparent rounded-xl shadow-xs transition-colors hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer",
+                  !notif.read && "border-l-blue-600"
                 )}
               >
-                <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5">
-                      <div className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        {getIcon(notif)}
+                <CardContent className="p-5 sm:px-5 sm:py-4 md:px-5 md:py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={cn("size-8 rounded-full flex items-center justify-center shrink-0", iconClassName)}>
+                        <Icon className="size-4" aria-hidden="true" />
                       </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-[14px] font-semibold text-gray-900 dark:text-gray-100">{notif.title}</h3>
-                          <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-1">{notif.message}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{notif.title}</h3>
+                          {!notif.read && <span className="size-1.5 rounded-full bg-blue-600 inline-block" aria-label="Unread" />}
                         </div>
-                        {!notif.read && (
+                        <p className="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">{notif.message}</p>
+                        {(() => {
+                          const attachment = notif.metadata && typeof notif.metadata === "object" && "attachment" in notif.metadata ? (notif.metadata as { attachment?: { name?: string; dataUrl?: string } }).attachment : undefined
+                          return attachment?.dataUrl ? <a href={attachment.dataUrl} download={attachment.name ?? "announcement-reference"} onClick={(event) => event.stopPropagation()} className="mt-1 inline-block text-xs font-medium text-blue-600 hover:underline">Download reference: {attachment.name ?? "attached file"}</a> : null
+                        })()}
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+                          <span>{getTimeAgo(notif.createdAt)}</span>
+                        {route && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); markAsRead(notif.id) }}
-                            className="text-[12px] text-primary hover:underline whitespace-nowrap"
+                            onClick={(e) => { e.stopPropagation(); handleViewNotification(notif) }}
+                            className="text-blue-600 hover:underline font-medium"
                           >
-                            Mark as read
+                            View
                           </button>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <p className="text-[12px] text-gray-400 dark:text-gray-500">{getTimeAgo(notif.createdAt)}</p>
-                        {route && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleViewNotification(notif) }}
-                              className="text-[12px] text-primary dark:text-blue-400 hover:underline font-medium"
-                            >
-                              View
-                            </button>
-                          )}
+                        </div>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      disabled={notif.read}
+                      aria-hidden={notif.read}
+                      onClick={(e) => { e.stopPropagation(); markAsRead(notif.id) }}
+                      className={cn(
+                        "self-center whitespace-nowrap rounded-md px-1.5 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200",
+                        notif.read && "invisible pointer-events-none"
+                      )}
+                    >
+                      Mark as read
+                    </button>
                   </div>
                 </CardContent>
               </Card>

@@ -1,0 +1,152 @@
+# =============================================================================
+# URS-DMS — Dokploy reference compose (illustrative, NOT used by Dokploy directly).
+#
+# Dokploy manages each service through its own UI; this file is here so you can
+# see the intended shape, networking, and volumes at a glance. Reproduce it in
+# the Dokploy dashboard.
+#
+# Service summary (matching Dokploy UI terminology):
+#   postgres  - PostgreSQL 16           (Dokploy Database)
+#   redis     - Redis 7                 (Dokploy Database)
+#   minio     - MinIO object storage    (Dokploy Application - Docker image)
+#   server    - URS-DMS backend         (Dokploy Application - Git build, ./server)
+#   frontend  - URS-DMS SPA + proxy     (Dokploy Application - Git build, ./Dockerfile)
+#
+# Networking: all services on the same internal Dokploy network. The frontend
+# reaches the backend via the internal DNS name `urs-server`. Traefik handles
+# public HTTPS at the edge.
+# =============================================================================
+
+name: urs-dms
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=20&pool_timeout=30
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      # NOTE: leave MINIO_PUBLIC_ENDPOINT unset; the backend streams files
+      # through /api/v1/files/* using the request origin, so the browser
+      # never reaches MinIO directly.
+      CLIENT_URL: ${CLIENT_URL}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      COOKIE_DOMAIN: ""
+      COOKIE_SECURE: "true"
+      COOKIE_SAME_SITE: "none"
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ISSUER: urs-dms
+      JWT_AUDIENCE: urs-dms-client
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL}
+      BOOTSTRAP_ADMIN_EMPLOYEE_ID: ${BOOTSTRAP_ADMIN_EMPLOYEE_ID}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
+      BOOTSTRAP_ADMIN_FIRST_NAME: ${BOOTSTRAP_ADMIN_FIRST_NAME}
+      BOOTSTRAP_ADMIN_LAST_NAME: ${BOOTSTRAP_ADMIN_LAST_NAME}
+      BOOTSTRAP_ROOT_EMAIL: ${BOOTSTRAP_ROOT_EMAIL}
+      BOOTSTRAP_ROOT_EMPLOYEE_ID: ${BOOTSTRAP_ROOT_EMPLOYEE_ID}
+      BOOTSTRAP_ROOT_PASSWORD: ${BOOTSTRAP_ROOT_PASSWORD}
+      BOOTSTRAP_ROOT_FIRST_NAME: ${BOOTSTRAP_ROOT_FIRST_NAME}
+      BOOTSTRAP_ROOT_LAST_NAME: ${BOOTSTRAP_ROOT_LAST_NAME}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DEEPSEEK_MODEL: deepseek-chat
+      TRUST_PROXY: "1"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Same-origin routing: the Nginx container proxies /api/* to urs-server.
+        VITE_API_BASE: /api/v1
+    restart: unless-stopped
+    # No env vars needed at runtime — the backend address is baked into nginx.conf
+    # via the upstream block.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - server
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

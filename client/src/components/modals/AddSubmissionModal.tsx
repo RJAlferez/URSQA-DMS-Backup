@@ -26,7 +26,7 @@ interface AddSubmissionModalProps {
   onOpenChange: (open: boolean) => void
   areaId?: string
   areaTitle?: string
-  areaSet?: "AACCUP" | "ISO" | "CERT"
+  areaSet?: "AACCUP" | "ISO"
   departmentId?: string
   onSuccess?: () => void
 }

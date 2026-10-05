@@ -80,6 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Rule 6: warn when uploads are still active before logging out.
     if (!confirmLeaveIfUploading()) return
     await authService.logout()
+    // Never restore another account's last page after a re-login (e.g. a ROOT
+    // page restored for a plain administrator, which would fire /root/* calls
+    // that 403 and write PERMISSION_DENIED audit events).
+    localStorage.removeItem("activePage")
     if (!rememberMe) {
       localStorage.removeItem(REMEMBER_ME_KEY)
     }

@@ -8,8 +8,11 @@
 
 # ---- 1. deps ---------------------------------------------------------------
 FROM node:20-alpine AS deps
-RUN apk add --no-cache openssl
+RUN sed -i 's/https:/http:/g' /etc/apk/repositories \
+    && apk add --no-cache openssl
 WORKDIR /app
+RUN npm config set strict-ssl false
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 
 # Copy manifests first to leverage Docker layer caching
 COPY package.json package-lock.json* ./
@@ -34,8 +37,10 @@ RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 
 # ---- 3. runtime ------------------------------------------------------------
 FROM node:20-alpine AS runtime
-RUN apk add --no-cache openssl wget poppler-utils
+RUN sed -i 's/https:/http:/g' /etc/apk/repositories \
+    && apk add --no-cache openssl wget poppler-utils
 WORKDIR /app
+RUN npm config set strict-ssl false
 
 ENV NODE_ENV=production
 ENV PORT=4000

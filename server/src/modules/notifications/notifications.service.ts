@@ -1,6 +1,7 @@
-import type { NotificationType } from "@prisma/client";
+import type { NotificationType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError } from "@/utils/errors";
+import { sendEmail } from "@/modules/email/email.service";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
 import {
@@ -13,9 +14,10 @@ import type {
   CreateAnnouncementInput,
   NotificationListItem,
   NotifyInput,
+  NotificationPreferenceView,
   UnreadCountResult,
 } from "@/modules/notifications/notifications.types";
-import type { ListNotificationsQuery } from "@/modules/notifications/notifications.validator";
+import type { ListNotificationsQuery, UpdateNotificationPreferenceBody } from "@/modules/notifications/notifications.validator";
 
 // =============================================================================
 // URS-DMS — Notifications service (Sprint 7.3)
@@ -155,11 +157,42 @@ export async function deleteNotification(id: string, actor: Actor): Promise<void
 export async function createAnnouncement(
   input: CreateAnnouncementInput,
   actor: Actor,
-): Promise<{ created: number }> {
+): Promise<{ created: number; announcementId: string }> {
   assertPermission(actor, "notification.manage");
+  const audience = input.audience ?? {};
+  const hasAudience = Object.values(audience).some((values) => (values?.length ?? 0) > 0);
+  const audienceOr: Prisma.UserWhereInput[] = [];
+  if (audience.campusIds?.length) {
+    audienceOr.push({ program: { campusId: { in: audience.campusIds } } });
+    audienceOr.push({ departments: { some: { campusId: { in: audience.campusIds } } } });
+  }
+  if (audience.collegeIds?.length) {
+    audienceOr.push({ program: { collegeId: { in: audience.collegeIds } } });
+    audienceOr.push({ departments: { some: { collegeId: { in: audience.collegeIds } } } });
+  }
+  if (audience.departmentIds?.length) {
+    audienceOr.push({ departmentId: { in: audience.departmentIds } });
+    audienceOr.push({ departments: { some: { id: { in: audience.departmentIds } } } });
+  }
+  if (audience.programIds?.length) audienceOr.push({ programId: { in: audience.programIds } });
   const users = await prisma.user.findMany({
-    where: { status: "ACTIVE", deletedAt: null },
-    select: { id: true },
+    where: {
+      status: "ACTIVE",
+      deletedAt: null,
+      ...(hasAudience && audienceOr.length > 0 ? { OR: audienceOr } : {}),
+    },
+    select: { id: true, email: true },
+  });
+  const announcement = await prisma.announcement.create({
+    data: {
+      title: input.title,
+      message: input.message,
+      priority: input.priority ?? "HIGH",
+      actionUrl: input.actionUrl ?? null,
+      metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      audience: (hasAudience ? audience : undefined) as Prisma.InputJsonValue | undefined,
+      createdById: actor.id,
+    },
   });
   const created = await repo.createManyForUsers(
     users.map((u) => u.id),
@@ -172,17 +205,80 @@ export async function createAnnouncement(
       metadata: input.metadata,
     },
   );
+  await queueEmails(
+    users.map((user) => user.id),
+    `URS-DMS — ${input.title}`,
+    `<h2>${input.title}</h2><p>${input.message}</p>${input.actionUrl ? `<p><a href="${input.actionUrl}">Open URS-DMS</a></p>` : ""}`,
+  );
   if (created > 0) {
     void writeAudit({
       action: AUDIT_ACTIONS.NOTIFICATION_CREATED,
       userId: actor.id,
       entity: "notification",
-      newValue: { type: "SYSTEM_ANNOUNCEMENT", recipients: created },
+      newValue: { type: "SYSTEM_ANNOUNCEMENT", recipients: created, announcementId: announcement.id, audience },
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
   }
-  return { created };
+  return { created, announcementId: announcement.id };
+}
+
+async function queueEmails(userIds: string[], subject: string, body: string): Promise<void> {
+  if (userIds.length === 0) return;
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...new Set(userIds)] }, status: "ACTIVE", deletedAt: null },
+    select: { email: true, notificationPreference: { select: { emailEnabled: true, frequency: true } } },
+  });
+  await Promise.allSettled(
+    users
+      .filter((user) => user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE")
+      .map((user) => sendEmail({ to: user.email, subject, body })),
+  );
+}
+
+export async function getNotificationPreference(actor: Actor): Promise<NotificationPreferenceView> {
+  assertPermission(actor, "notification.read");
+  const preference = await prisma.notificationPreference.findUnique({ where: { userId: actor.id } });
+  return {
+    emailEnabled: preference?.emailEnabled ?? true,
+    frequency: preference?.frequency ?? "IMMEDIATE",
+    deadlineHours: preference?.deadlineHours ?? 24,
+    timezone: preference?.timezone ?? "Asia/Manila",
+  };
+}
+
+export async function updateNotificationPreference(
+  input: UpdateNotificationPreferenceBody,
+  actor: Actor,
+): Promise<NotificationPreferenceView> {
+  assertPermission(actor, "notification.read");
+  const preference = await prisma.notificationPreference.upsert({
+    where: { userId: actor.id },
+    create: { userId: actor.id, ...input },
+    update: input,
+  });
+  return {
+    emailEnabled: preference.emailEnabled,
+    frequency: preference.frequency,
+    deadlineHours: preference.deadlineHours,
+    timezone: preference.timezone,
+  };
+}
+
+export async function listAnnouncementAudienceOptions(actor: Actor): Promise<{
+  campuses: Array<{ id: string; name: string }>;
+  colleges: Array<{ id: string; name: string }>;
+  departments: Array<{ id: string; name: string }>;
+  programs: Array<{ id: string; name: string }>;
+}> {
+  assertPermission(actor, "notification.manage");
+  const [campuses, colleges, departments, programs] = await Promise.all([
+    prisma.campus.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.college.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.department.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.program.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
+  return { campuses, colleges, departments, programs };
 }
 
 // -----------------------------------------------------------------------------
@@ -220,7 +316,7 @@ export async function notifyUser(
 ): Promise<NotificationListItem | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true },
+    select: { id: true, email: true, notificationPreference: { select: { emailEnabled: true, frequency: true } } },
   });
   if (!user) throw new NotFoundError("Recipient user not found");
 
@@ -235,6 +331,9 @@ export async function notifyUser(
     actionUrl: input.actionUrl,
     metadata: input.metadata,
   });
+  if (payload.email && user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE") {
+    await sendEmail({ to: user.email, ...payload.email }).catch(() => undefined);
+  }
 
   return toListItem(row);
 }
@@ -249,7 +348,7 @@ export async function notifyUsers(
   const uniqueIds = [...new Set(userIds)];
   const users = await prisma.user.findMany({
     where: { id: { in: uniqueIds } },
-    select: { id: true },
+    select: { id: true, email: true, notificationPreference: { select: { emailEnabled: true, frequency: true } } },
   });
   const foundIds = users.map((u) => u.id);
   const created = await repo.createManyForUsers(foundIds, {
@@ -262,6 +361,13 @@ export async function notifyUsers(
     actionUrl: input.actionUrl,
     metadata: input.metadata,
   });
+  if (payload.email) {
+    await Promise.allSettled(
+      users
+        .filter((user) => user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE")
+        .map((user) => sendEmail({ to: user.email, ...payload.email! })),
+    );
+  }
   return created;
 }
 

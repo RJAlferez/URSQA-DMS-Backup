@@ -254,7 +254,7 @@ export interface AuditReportRow {
   timestamp: Date;
   action: string;
   module: string;
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "DENIED";
   userId: string | null;
   userName: string | null;
   userEmail: string | null;
@@ -268,6 +268,7 @@ export interface AuditReportSummary {
   totalEvents: number;
   successCount: number;
   failedCount: number;
+  deniedCount: number;
   byModule: { label: string; value: number }[];
   byAction: { label: string; value: number }[];
 }

@@ -1,0 +1,24 @@
+flowchart TD
+    A(["Admin / QAO / Dept Head opens Tasks"]) --> B{"Assign task"}
+    B --> C["Open assignee picker<br/>GET /aaccup/tasks/assignees<br/>(QAO-friendly list)"]
+    C --> D["Pick assignee: user OR whole department<br/>set title, description, dueDate, priority"]
+    D --> E["POST create AaccupTask<br/>status = OPEN"]
+    E --> F["Notify assignee:<br/>AACCUP_TASK_ASSIGNED"]
+    F --> G(["Task visible under My Tasks<br/>(GET /aaccup/tasks?mine=true)"])
+
+    G --> H{"Assignee transitions"}
+    H -- Start --> I["OPEN -> IN_PROGRESS<br/>(authorized inside service)"]
+    I --> J["Attach submission to task (taskId)<br/>or reference requirement"]
+    J --> K["Mark completed"]
+    K --> L["IN_PROGRESS -> COMPLETED"]
+    L --> M["Notify assigner:<br/>task completed"]
+    H -- Cancel --> N["OPEN/IN_PROGRESS -> CANCELLED<br/>(authorized)"]
+    N --> O["Notify assigner"]
+
+    M --> P(["Task closed"])
+    O --> P
+
+    G --> Q{"Admin overview"}
+    Q --> R["Filter by status / assignee /<br/>priority / due date"]
+    R --> S["Reassign or edit due date<br/>PATCH task"]
+    S --> F

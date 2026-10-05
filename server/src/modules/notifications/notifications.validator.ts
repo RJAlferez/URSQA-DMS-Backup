@@ -25,6 +25,20 @@ export const createAnnouncementSchema = z
     priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
     actionUrl: z.string().trim().max(2048).nullable().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
+    audience: z.object({
+      campusIds: z.array(z.string().uuid()).max(100).optional(),
+      collegeIds: z.array(z.string().uuid()).max(100).optional(),
+      departmentIds: z.array(z.string().uuid()).max(100).optional(),
+      programIds: z.array(z.string().uuid()).max(100).optional(),
+    }).optional(),
   })
   .strict();
 export type CreateAnnouncementBody = z.infer<typeof createAnnouncementSchema>;
+
+export const updateNotificationPreferenceSchema = z.object({
+  emailEnabled: z.boolean().optional(),
+  frequency: z.enum(["IMMEDIATE", "DAILY", "WEEKLY", "MONTHLY"]).optional(),
+  deadlineHours: z.number().int().min(1).max(168).optional(),
+  timezone: z.string().trim().min(1).max(80).optional(),
+}).strict();
+export type UpdateNotificationPreferenceBody = z.infer<typeof updateNotificationPreferenceSchema>;

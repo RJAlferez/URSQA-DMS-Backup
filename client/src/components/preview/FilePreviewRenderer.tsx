@@ -30,7 +30,9 @@ async function downloadFile(file: DocumentFile) {
       `/documents/${encodeURIComponent(file.id)}/download`,
     )
     window.open(result.url, "_blank", "noopener,noreferrer")
-  } catch {}
+  } catch {
+    // Download failures are surfaced by the surrounding preview state.
+  }
 }
 
 const getFileTypeIcon = (type: DocumentFile["type"]) => {
@@ -353,19 +355,23 @@ function NoPreviewAvailable({ file }: { file: DocumentFile }) {
 
 export function FilePreviewRenderer({ file, className }: FilePreviewRendererProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [previewMimeType, setPreviewMimeType] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     if (!file.id) {
       setBlobUrl(null)
+      setPreviewMimeType(null)
       return
     }
     setLoading(true)
     setError(false)
+    setPreviewMimeType(null)
     apiGet<PreviewDownloadResult>(`/documents/${encodeURIComponent(file.id)}/preview`)
       .then((result) => {
         setBlobUrl(result.url)
+        setPreviewMimeType(result.mimeType ?? null)
         setLoading(false)
       })
       .catch(() => {
@@ -407,7 +413,7 @@ export function FilePreviewRenderer({ file, className }: FilePreviewRendererProp
         </div>
       )
     }
-    if (isPdf) return <PdfPreview file={file} blobUrl={blobUrl} />
+    if (isPdf || previewMimeType === "application/pdf") return <PdfPreview file={file} blobUrl={blobUrl} />
     if (isImage) return <ImagePreview file={file} blobUrl={blobUrl} />
     if (["DOCX", "DOC", "XLSX", "XLS", "PPTX", "PPT"].includes(file.type?.toUpperCase())) {
       return <OfficePreview file={file} />

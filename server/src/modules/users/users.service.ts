@@ -10,6 +10,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
+import { loadCodesByRoleId } from "@/modules/permissions/permissions.repository";
+import { assertCanAssignRole } from "@/modules/admin/_shared/admin.guard";
 import type { Prisma, UserStatus } from "@prisma/client";
 import type { CreateUserInput, UpdateUserInput, UpdateSelfInput } from "@/modules/users/users.validator";
 import type { UserDetail, UserListItem } from "@/modules/users/users.types";
@@ -23,6 +25,36 @@ import type { ProfilePhotoFinalizeInput, ProfilePhotoPresignInput } from "@/modu
 export interface ListResult {
   items: UserListItem[];
   meta: { page: number; pageSize: number; total: number; totalPages: number };
+}
+
+// -----------------------------------------------------------------------------
+// Privilege-escalation / root-lockout guards (mirror of admin/users.service)
+// The legacy /users CRUD surface is mounted alongside /admin/users; without
+// these checks an ADMINISTRATOR could self-promote to ROOT (assign the ROOT
+// role), reset the ROOT password, or archive/suspend ROOT.
+// -----------------------------------------------------------------------------
+async function assertActorCanAssignRole(actorId: string, roleId: string): Promise<void> {
+  const [actor, targetRole] = await Promise.all([
+    prisma.user.findUnique({ where: { id: actorId }, select: { roleId: true } }),
+    prisma.role.findFirst({ where: { id: roleId, deletedAt: null }, select: { id: true } }),
+  ]);
+  if (!targetRole) throw new NotFoundError("Role not found");
+  if (!actor) throw new NotFoundError("Actor not found");
+  const [actorCodes, roleCodes] = await Promise.all([
+    loadCodesByRoleId(actor.roleId),
+    loadCodesByRoleId(roleId),
+  ]);
+  assertCanAssignRole({ permissions: actorCodes }, roleCodes);
+}
+
+async function assertNotRootTarget(userId: string): Promise<void> {
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: { select: { name: true } } },
+  });
+  if (target?.role.name === "ROOT") {
+    throw new ForbiddenError("Root accounts are protected; manage them from the Root Console");
+  }
 }
 
 export async function presignOwnProfilePhoto(userId: string, input: ProfilePhotoPresignInput) {
@@ -83,6 +115,7 @@ export async function createUser(
 
   const role = await prisma.role.findUnique({ where: { id: data.roleId } });
   if (!role) throw new NotFoundError("Role not found");
+  await assertActorCanAssignRole(actorId, data.roleId);
 
   const passwordHash = await hashPassword(data.password);
   const created = await repo.create({ data, passwordHash });
@@ -109,21 +142,22 @@ export async function updateUser(
 ): Promise<UserDetail> {
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("User not found");
+  await assertNotRootTarget(id);
 
   if (data.email && data.email !== existing.email) {
     const conflict = await repo.findByEmail(data.email);
     if (conflict && conflict.id !== id) throw new EmailTakenError();
   }
 
-  if (data.roleId) {
-    const role = await prisma.role.findUnique({ where: { id: data.roleId } });
-    if (!role) throw new NotFoundError("Role not found");
+  const roleChanged = !!data.roleId && data.roleId !== existing.roleId;
+  if (roleChanged) {
+    await assertActorCanAssignRole(actorId, data.roleId!);
   }
 
   const updated = await repo.update({ id, data });
 
   await writeAudit({
-    action: AUDIT_ACTIONS.USER_UPDATED,
+    action: roleChanged ? AUDIT_ACTIONS.USER_ROLE_CHANGED : AUDIT_ACTIONS.USER_UPDATED,
     userId: actorId,
     entity: "user",
     entityId: id,
@@ -154,6 +188,7 @@ export async function changeUserStatus(
 
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("User not found");
+  await assertNotRootTarget(id);
 
   const updated = await repo.changeStatus(id, status);
 
@@ -184,6 +219,7 @@ export async function resetUserPassword(
 ): Promise<void> {
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("User not found");
+  await assertNotRootTarget(id);
 
   const passwordHash = await hashPassword(newPassword);
   await repo.updatePasswordHash(id, passwordHash);
@@ -211,6 +247,7 @@ export async function deleteUser(
   if (existing.id === actorId) {
     throw new ForbiddenError("You cannot delete your own account");
   }
+  await assertNotRootTarget(id);
 
   await repo.softDelete(id);
   await repo.revokeAllSessions(id);

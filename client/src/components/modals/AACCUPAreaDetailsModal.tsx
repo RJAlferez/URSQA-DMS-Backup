@@ -65,7 +65,7 @@ interface AACCUPAreaDetailsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   area: AACCUPArea | null
-  areaSet?: "AACCUP" | "ISO" | "CERT"
+  areaSet?: "AACCUP" | "ISO"
   onAddSubmission: () => void
   onCreateTask: () => void
   onEditArea?: () => void
@@ -80,7 +80,7 @@ interface AreaSubmission {
   submittedBy: string
   department: string
   dateSubmitted: string
-  status: "Approved" | "Pending" | "Returned" | "Rejected"
+  status: "Approved" | "Pending" | "Returned" | "Rejected" | "Withdrawn"
 }
 
 const submissionStatusVariant: Record<AreaSubmission["status"], "success" | "warning" | "danger"> = {
@@ -88,6 +88,7 @@ const submissionStatusVariant: Record<AreaSubmission["status"], "success" | "war
   Pending: "warning",
   Returned: "danger",
   Rejected: "danger",
+  Withdrawn: "warning",
 }
 
 const areaStatusVariant = {
@@ -102,6 +103,7 @@ const statusLabel: Record<OnlineSubmissionListItem["status"], AreaSubmission["st
   APPROVED: "Approved",
   REJECTED: "Rejected",
   NEEDS_REVISION: "Returned",
+  WITHDRAWN: "Withdrawn",
 }
 
 function formatDate(value: string): string {

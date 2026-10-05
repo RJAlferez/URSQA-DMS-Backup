@@ -1,0 +1,45 @@
+flowchart LR
+    subgraph PORTAL_A["ROOT portal"]
+        RA["ROOT Console<br/>config / builders / org / wizard"]
+        RA2["Admin dashboards (inherit admin)"]
+    end
+
+    subgraph PORTAL_B["Admin portal (ADMINISTRATOR)"]
+        BA["Dashboard + realtime analytics"]
+        BB["Documents / repository admin"]
+        BC["AACCUP | ISO | Certification<br/>areas + requirements"]
+        BD["Submissions review"]
+        BE["Requests (records office)"]
+        BF["Tasks (assign / track)"]
+        BG["User management"]
+        BH["Account & Security"]
+        BI["Audit logs"]
+    end
+
+    subgraph PORTAL_C["QAO portal (QUALITY_ASSURANCE_OFFICER)"]
+        CA["Submissions review"]
+        CB["Tasks assignees picker"]
+        CC["Areas (own scope)"]
+    end
+
+    subgraph PORTAL_D["Dept coordinator / Faculty / Staff portal"]
+        DA["My Documents (personal repository)"]
+        DB["My Submissions (accreditation)"]
+        DC["My Tasks"]
+        DD["Request Document (1-3 items)"]
+        DE["Recent / Favorites / Requested /<br/>Recycle bin"]
+        DF["Notifications"]
+    end
+
+    subgraph PORTAL_E["Read-only portal (READ_ONLY)"]
+        EA["Browse + download permitted docs"]
+    end
+
+    LOGIN["Login (identifier + password)"] --> AUTHR{"JWT role"}
+    AUTHR -- ROOT --> PORTAL_A
+    AUTHR -- ADMINISTRATOR --> PORTAL_B
+    AUTHR -- QUALITY_ASSURANCE_OFFICER --> PORTAL_C
+    AUTHR -- DEPARTMENT_COORDINATOR /<br/>FACULTY / STAFF --> PORTAL_D
+    AUTHR -- READ_ONLY --> PORTAL_E
+
+    PORTAL_B -. "some admin tools hidden" .-> PORTAL_A

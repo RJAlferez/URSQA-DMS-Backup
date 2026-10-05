@@ -1,0 +1,21 @@
+flowchart TD
+    A(["Admin / ROOT opens Users"]) --> B["POST /api/v1/users<br/>(create user)"]
+    B --> C{"Role is one of the<br/>4 colleges? / fields valid?"}
+    C -- No --> D["400 validation<br/>employeeId auto-derived from email"]
+    D --> B
+    C -- Yes --> E["Create user record<br/>status ACTIVE by default"]
+    E --> F{"Send invitation?"}
+    F -- Yes --> G["Generate RegistrationInvite<br/>(token + expiry)"]
+    G --> H["Transactional email<br/>with registration link"]
+    H --> I(["User receives invite"])
+    I --> J["Opens Register page<br/>enter email + invitation token"]
+    J --> K{"Invite found & valid?"}
+    K -- "No / expired" --> L["Error: duplicate /<br/>expired / invalid invite"]
+    L --> J
+    K -- Valid --> M["Choose campus, department,<br/>university ID, password"]
+    M --> N{"Invitation email matches<br/> + no duplicate account?"}
+    N -- No --> L
+    N -- Yes --> O["Create account (Argon2 password)<br/>consume invite"]
+    O --> P["Welcome/transactional email<br/>audit auth.registered"]
+    P --> Q["Redirect to login"]
+    Q --> R(["User logs in"])

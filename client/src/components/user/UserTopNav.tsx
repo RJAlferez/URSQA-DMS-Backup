@@ -42,7 +42,7 @@ export function UserTopNav({ onNavigate, onOpenCommandPalette, unreadNotificatio
 
   return (
     <header className="h-16 bg-white/80 dark:bg-[#0B1121]/90 backdrop-blur-md border-b border-border dark:border-gray-800 flex-shrink-0">
-      <div className="flex items-center justify-between h-full px-6">
+      <div className="flex items-center justify-between h-full navbar-responsive">
         <div className="flex-1 max-w-xl">
           <button
             onClick={onOpenCommandPalette}

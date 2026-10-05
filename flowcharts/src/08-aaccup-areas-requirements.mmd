@@ -1,0 +1,39 @@
+flowchart TD
+    A(["Admin / ROOT opens AACCUP group"]) --> B{"Which accreditation tab?"}
+    B -- AACCUP --> C["AreaSet = AACCUP"]
+    B -- ISO --> D["AreaSet = ISO"]
+    B -- CERT --> E["AreaSet = CERT"]
+
+    C --> F
+    D --> F
+    E --> F
+
+    F(["Shared tab strip: AACCUP | ISO |<br/>Certification | Submissions | Tasks<br/>(URL ?tab= synced)"])
+
+    F --> G{"Role / view?"}
+
+    G -- Admin sees --> H["Admin portal"]
+    G -- Department user sees --> I["User portal"]
+    G -- QAO sees --> I2["QAO review + assign"]
+
+    H --> J["Area management: AddAreaModal<br/>(name, description, department, status)"]
+    J --> K{"Area source?"}
+    K -- ROOT-builder managed --> L["Read-only (cannot edit here)"]
+    K -- Standard --> M["POST/PATCH area<br/>status ACTIVE | INACTIVE"]
+    M --> N["POST requirement under area<br/>RequirementStatus ACTIVE | INACTIVE<br/>archive = INACTIVE"]
+
+    I --> O["Browse areas by department"]
+    O --> P{"Select area"}
+    P --> Q["Area details modal"]
+    Q --> R["Requirements tab: list, status"]
+    R --> S["Submit against a requirement<br/>(goes to Submissions)"]
+    S --> SUB["AACCUP submissions workflow"]
+
+    L --> DASH
+    N --> DASH
+    I2 --> T["Tasks assignment workflow"]
+    T --> DASH
+
+    DASH(["Per-set analytics dashboard<br/>(realtime, auto-refresh)<br/>area coverage + submission stats"])
+
+    SUB ==> SUBFLOW["See: 09-submissions-review"]

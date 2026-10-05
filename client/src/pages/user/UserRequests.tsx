@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Search, FileText, FilePlus, FolderArchive, Eye, XCircle, FileCheck2 } from "lucide-react"
+import { Search, FileText, FilePlus, FolderArchive, Eye, XCircle, FileCheck2, CalendarDays, Paperclip } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Card, CardContent } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
@@ -42,15 +42,18 @@ interface UserRequestsProps {
   onBrowseArchive?: () => void
 }
 
+const REQUESTS_TABS = ["all", "pending", "approved", "fulfilled", "rejected"] as const
+type RequestsTab = (typeof REQUESTS_TABS)[number]
+const isRequestsTab = (value: string | null): value is RequestsTab =>
+  !!value && (REQUESTS_TABS as readonly string[]).includes(value)
+
 export default function UserRequests({ onBrowseArchive }: UserRequestsProps) {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [requests, setRequests] = useState<DocumentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
-  const urlTab = searchParams.get("tab")
   const highlightId = searchParams.get("highlight")
-  const [activeTab, setActiveTab] = useState<string>(urlTab && ["all", "pending", "approved", "fulfilled", "rejected"].includes(urlTab) ? urlTab : "all")
   const [selected, setSelected] = useState<DocumentRequest | null>(null)
   const [cancelling, setCancelling] = useState(false)
 
@@ -66,20 +69,17 @@ export default function UserRequests({ onBrowseArchive }: UserRequestsProps) {
 
   useEffect(() => { void refresh() }, [refresh])
 
-  useEffect(() => {
-    const tab = searchParams.get("tab")
-    if (tab && ["all", "pending", "approved", "fulfilled", "rejected"].includes(tab)) setActiveTab(tab)
-    else setActiveTab("all")
-  }, [searchParams])
+  // URL query param is the single source of truth for the active filter tab.
+  // The URL is updated directly in the click handler (replace:true), so the
+  // page can never snap back to a stale "last selected" tab.
+  const activeTab: RequestsTab = isRequestsTab(searchParams.get("tab")) ? searchParams.get("tab") as RequestsTab : "all"
 
-  useEffect(() => {
-    setSearchParams((previous) => {
-      const next = new URLSearchParams(previous)
-      if (activeTab === "all") next.delete("tab")
-      else next.set("tab", activeTab)
-      return next
-    }, { replace: true })
-  }, [activeTab, setSearchParams])
+  const selectTab = (tab: RequestsTab) => {
+    const next = new URLSearchParams(searchParams)
+    if (tab === "all") next.delete("tab")
+    else next.set("tab", tab)
+    setSearchParams(next, { replace: true })
+  }
 
   const filteredRequests = requests.filter((req) => {
     const matchesSearch = req.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -105,52 +105,44 @@ export default function UserRequests({ onBrowseArchive }: UserRequestsProps) {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="My Requests"
-        description="Track your document access requests"
+        description="Track and manage your document access and issuance requests"
         actions={
-          <Button onClick={onBrowseArchive}>
-            <FilePlus className="w-4 h-4 mr-2" />
+          <Button onClick={onBrowseArchive} className="h-9 rounded-lg px-4 text-xs">
+            <FilePlus className="mr-2 size-3.5" />
             Request Files
           </Button>
         }
       />
 
-      <Card className="border-border/70 shadow-soft mb-6">
-         <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-            <div className="flex items-center gap-1 overflow-x-auto">
-              {(["all", "pending", "approved", "fulfilled", "rejected"] as const).map((tab) => (
-                <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors whitespace-nowrap",
-                      activeTab === tab
-                        ? "bg-primary text-white"
-                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-100",
-                    )}
-                  >
-                    {tab === "all" ? "All" : tab === "pending" ? "Pending" : tab === "approved" ? "Approved" : tab === "fulfilled" ? "Fulfilled" : "Rejected"}
-                  </button>
-                ))}
-              </div>
-        </CardContent>
-      </Card>
+      <div className="mb-5 flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-4 dark:border-slate-800">
+        {REQUESTS_TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => selectTab(tab)}
+            className={cn(
+              "h-8 rounded-full px-4 text-xs font-medium transition-colors whitespace-nowrap",
+              activeTab === tab
+                ? "bg-primary text-white shadow-soft shadow-primary/20"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800",
+            )}
+          >
+            {tab === "all" ? "All" : tab === "pending" ? "Pending" : tab === "approved" ? "Approved" : tab === "fulfilled" ? "Fulfilled" : "Rejected"}
+          </button>
+        ))}
+      </div>
 
-      <Card className="border-border/70 shadow-soft mb-6">
-         <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              placeholder="Search requests..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 bg-gray-50/50 border-0 hover:bg-gray-100 focus:bg-white"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="relative mb-4 max-w-none">
+        <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+        <Input
+          placeholder="Search requests by title, keyword, or reference number..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="h-9 border-slate-200 bg-white pl-8 text-xs shadow-none placeholder:text-slate-400 hover:border-slate-300 focus:bg-white dark:bg-slate-900"
+        />
+      </div>
 
       {loading ? (
         <Card className="border-border/70 shadow-soft">
@@ -170,52 +162,53 @@ export default function UserRequests({ onBrowseArchive }: UserRequestsProps) {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {filteredRequests.map((request) => (
-              <Card key={request.id} className={cn("border-border/70 shadow-soft hover:shadow-lift transition-shadow", request.id === highlightId && "ring-2 ring-blue-300 bg-primary-50")}>
-               <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center mt-0.5">
-                      <FileText className="w-5 h-5 text-gray-500" />
+              <Card key={request.id} className={cn("border-slate-200/80 bg-white shadow-xs transition-colors hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700", request.id === highlightId && "ring-2 ring-blue-300 bg-primary-50")}>
+               <CardContent className="p-4 sm:px-4 sm:py-3.5 md:px-4 md:py-3.5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                      <FileText className="size-4" />
                     </div>
-                    <div>
-                      <h3 className="text-[14px] font-semibold text-gray-900">{request.title}</h3>
-                      <p className="text-[13px] text-gray-500 mt-1">Explanation: {request.purpose}</p>
-                      <div className="flex flex-wrap items-center gap-3 mt-2">
-                        <span className="text-[12px] text-gray-400">Submitted: {new Date(request.dateSubmitted).toLocaleDateString()}</span>
-                        <span className="text-[12px] text-gray-300">|</span>
-                        <span className="text-[12px] text-gray-400">Priority: {getPriorityBadge(request.priority)}</span>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100">{request.title}</h3>
+                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">Explanation: {request.purpose}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400 dark:text-slate-500">
+                        <span className="inline-flex items-center gap-1"><CalendarDays className="size-3" />Submitted: {new Date(request.dateSubmitted).toLocaleDateString()}</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="inline-flex items-center gap-1">Priority: {getPriorityBadge(request.priority)}</span>
                         {request.documents.length > 0 && (
                           <>
-                            <span className="text-[12px] text-gray-300">|</span>
-                            <span className="text-[12px] text-gray-400">
+                            <span className="text-slate-300">•</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Paperclip className="size-3" />
                               {request.documents.length} file{request.documents.length > 1 ? "s" : ""}
                             </span>
                           </>
                         )}
                       </div>
                       {request.remarks && request.status === "Rejected" && (
-                        <p className="text-[12px] text-red-600 mt-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        <p className="mt-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">
                           Decision: {request.remarks}
                         </p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
                     {getStatusBadge(request.status)}
-                    <Button variant="ghost" size="icon" className="h-8 w-8" title="View details" onClick={() => setSelected(request)}>
-                      <Eye className="w-4 h-4" />
+                    <Button variant="ghost" size="icon" className="size-7 text-slate-400 hover:text-slate-700" title="View details" onClick={() => setSelected(request)}>
+                      <Eye className="size-3.5" />
                     </Button>
                     {request.status === "Pending" && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-red-600 hover:bg-red-50"
+                        className="size-7 text-red-500 hover:bg-red-50"
                         title="Cancel request"
                         onClick={() => void handleCancel(request)}
                       >
-                        <XCircle className="w-4 h-4" />
+                        <XCircle className="size-3.5" />
                       </Button>
                     )}
                   </div>
@@ -226,11 +219,10 @@ export default function UserRequests({ onBrowseArchive }: UserRequestsProps) {
         </div>
       )}
 
-      <Card className="border-border/70 shadow-soft mt-6">
-         <CardContent className="p-4 pt-4 md:p-5 md:pt-5">
-          <p className="text-[13px] text-gray-500">Showing {filteredRequests.length} of {requests.length} requests</p>
-        </CardContent>
-      </Card>
+      <div className="mt-4 flex items-center justify-between gap-3 px-1 text-[11px] text-slate-400 dark:text-slate-500">
+        <p>Showing {filteredRequests.length} of {requests.length} requests</p>
+        <p className="hidden sm:block">Request status updates appear here after refresh.</p>
+      </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="sm:max-w-[540px]">

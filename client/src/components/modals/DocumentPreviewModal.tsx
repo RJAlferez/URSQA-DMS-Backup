@@ -79,6 +79,7 @@ export function DocumentPreviewModal({
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [previewMimeType, setPreviewMimeType] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(1)
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -88,12 +89,17 @@ export function DocumentPreviewModal({
   useEffect(() => {
     if (!open || !document?.id) {
       setBlobUrl(null)
+      setPreviewMimeType(null)
       return
     }
     setLoading(true)
     setError(null)
+    setPreviewMimeType(null)
     apiGet<PreviewDownloadResult>(`/documents/${encodeURIComponent(document.id)}/preview`)
-      .then((result) => fetch(result.url))
+      .then((result) => {
+        setPreviewMimeType(result.mimeType ?? null)
+        return fetch(result.url)
+      })
       .then((response) => {
         if (!response.ok) throw new Error("Failed to load file preview")
         return response.blob()
@@ -116,7 +122,7 @@ export function DocumentPreviewModal({
     }
   }, [blobUrl])
 
-  const isPdf = document?.mimeType?.includes("pdf")
+  const isPdf = previewMimeType === "application/pdf" || document?.mimeType?.includes("pdf")
   const isImage = document?.mimeType?.startsWith("image/")
   const isPreviewable = isPdf || isImage
 
@@ -176,7 +182,7 @@ export function DocumentPreviewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] w-full h-[90vh] p-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[95vw] w-full h-[90vh] p-0 overflow-hidden flex flex-col max-md:max-w-none max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:rounded-none">
         <DialogHeader className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <DialogTitle className="text-lg">Preview Document</DialogTitle>
         </DialogHeader>
@@ -243,7 +249,7 @@ export function DocumentPreviewModal({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8 flex items-start justify-center">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 flex items-start justify-center">
               {loading && (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                   <Loader2 className="w-8 h-8 animate-spin mb-2" />

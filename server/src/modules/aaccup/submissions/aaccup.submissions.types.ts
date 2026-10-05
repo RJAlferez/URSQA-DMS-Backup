@@ -27,6 +27,8 @@ export interface AaccupSubmissionListItem {
   isCurrent: boolean;
   submittedAt: Date;
   reviewedAt: Date | null;
+  withdrawnAt: Date | null;
+  withdrawalReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

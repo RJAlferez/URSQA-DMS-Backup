@@ -148,7 +148,7 @@ export default function RootMaintenance() {
   const stats = status?.stats
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Storage Maintenance"
         description="Recycle Bin retention, orphaned object cleanup, and storage integrity — ROOT only."
@@ -171,9 +171,9 @@ export default function RootMaintenance() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-5 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 responsive-gap mb-6 lg:mb-8">
         <Card className="border-border/70 shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-5 md:p-6">
             <p className="text-[12px] text-gray-500">Object Storage Used</p>
             <p className="text-[18px] font-semibold text-gray-900 mt-1">
               {stats ? formatBytes(stats.objectStorageUsedBytes) : "—"}
@@ -182,7 +182,7 @@ export default function RootMaintenance() {
           </CardContent>
         </Card>
         <Card className="border-border/70 shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-5 md:p-6">
             <p className="text-[12px] text-gray-500">Active Files</p>
             <p className="text-[18px] font-semibold text-gray-900 mt-1">{stats?.activeFileCount ?? "—"}</p>
             <p className="text-[11px] text-gray-400 mt-1">
@@ -191,7 +191,7 @@ export default function RootMaintenance() {
           </CardContent>
         </Card>
         <Card className="border-border/70 shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-5 md:p-6">
             <p className="text-[12px] text-gray-500">Orphan Candidates</p>
             <p className="text-[18px] font-semibold text-gray-900 mt-1">{status?.orphanCandidates.CANDIDATE ?? 0}</p>
             <p className="text-[11px] text-gray-400 mt-1">
@@ -200,7 +200,7 @@ export default function RootMaintenance() {
           </CardContent>
         </Card>
         <Card className="border-border/70 shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-5 md:p-6">
             <p className="text-[12px] text-gray-500">MinIO</p>
             <p className="text-[18px] font-semibold text-gray-900 mt-1">
               <Badge variant={stats?.minio.status === "up" ? "success" : "danger"}>

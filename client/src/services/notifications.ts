@@ -1,5 +1,5 @@
 import type { Notification, NotificationType } from "@/types/domain"
-import { apiDelete, apiGet, apiGetPage, apiPatch } from "@/lib/http"
+import { apiDelete, apiGet, apiGetPage, apiPatch, apiPost } from "@/lib/http"
 
 export interface ServerNotification {
   id: string
@@ -14,6 +14,45 @@ export interface ServerNotification {
   isRead: boolean
   readAt: string | null
   createdAt: string
+}
+
+export type NotificationFrequency = "IMMEDIATE" | "DAILY" | "WEEKLY" | "MONTHLY"
+
+export interface NotificationPreference {
+  emailEnabled: boolean
+  frequency: NotificationFrequency
+  deadlineHours: number
+  timezone: string
+}
+
+export interface AnnouncementAudienceOptions {
+  campuses: Array<{ id: string; name: string }>
+  colleges: Array<{ id: string; name: string }>
+  departments: Array<{ id: string; name: string }>
+  programs: Array<{ id: string; name: string }>
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreference> {
+  return apiGet<NotificationPreference>("/notifications/preferences")
+}
+
+export async function updateNotificationPreferences(input: Partial<NotificationPreference>): Promise<NotificationPreference> {
+  return apiPatch<NotificationPreference>("/notifications/preferences", input)
+}
+
+export async function getAnnouncementAudienceOptions(): Promise<AnnouncementAudienceOptions> {
+  return apiGet<AnnouncementAudienceOptions>("/notifications/announcement-audience-options")
+}
+
+export async function createAnnouncement(input: {
+  title: string
+  message: string
+  priority?: "LOW" | "MEDIUM" | "HIGH"
+  actionUrl?: string | null
+  audience?: { campusIds?: string[]; collegeIds?: string[]; departmentIds?: string[]; programIds?: string[] }
+  metadata?: Record<string, unknown>
+}): Promise<{ created: number; announcementId: string }> {
+  return apiPost<{ created: number; announcementId: string }>("/notifications/announcements", input)
 }
 
 function toClientNotification(n: ServerNotification): Notification {

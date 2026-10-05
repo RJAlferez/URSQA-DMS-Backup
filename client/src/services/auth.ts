@@ -1,5 +1,5 @@
 import type { User, UserRole, ServerUser, UserSession } from "@/types/domain"
-import { apiGet, apiPost, apiPatch, getAccessToken, clearServerToken, setServerToken } from "@/lib/http"
+import { apiGet, apiPost, apiPatch, getAccessToken, clearServerToken, setServerToken, ApiRequestError } from "@/lib/http"
 
 export type AuthStatus = "INITIALIZING" | "AUTHENTICATED" | "UNAUTHENTICATED"
 
@@ -21,6 +21,27 @@ const ROLE_MAP: Record<string, UserRole> = {
   FACULTY: "faculty",
   STAFF: "staff",
   READ_ONLY: "student",
+}
+
+// Map server auth errors to precise, non-leaky user-facing messages. The
+// previous implementation always showed "Invalid email or password", hiding
+// lockouts, deactivated accounts and rate limiting.
+function loginErrorMessage(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    switch (err.code) {
+      case "ACCOUNT_LOCKED":
+        return "Your account is temporarily locked after too many failed attempts. Please try again later."
+      case "ACCOUNT_INACTIVE":
+        return "This account is not active. Contact your administrator."
+      case "RATE_LIMITED":
+        return "Too many sign-in attempts. Please wait a few minutes and try again."
+      case "VALIDATION_ERROR":
+        return err.message
+      default:
+        return "Invalid email or password. Please try again."
+    }
+  }
+  return "Invalid email or password. Please try again."
 }
 
 export function toClientUser(server: ServerUser): User {
@@ -97,6 +118,13 @@ class AuthService {
   }
 
   async login(email: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> {
+    // In-flight guard: state is mutated synchronously, so a rapid double
+    // submit can never create two sessions / two auth.login.success events,
+    // even if React has not yet re-rendered the disabled button.
+    if (this.state.isLoading) {
+      return { success: false, error: "A sign-in is already in progress." }
+    }
+    this.update({ isLoading: true })
     try {
       const data = await apiPost<{ accessToken: string; user: ServerUser }>("/auth/login", {
         identifier: email,
@@ -104,11 +132,11 @@ class AuthService {
       })
       setServerToken(data.accessToken)
       const user = toClientUser(data.user)
-      this.update({ isAuthenticated: true, user, token: data.accessToken, authStatus: "AUTHENTICATED" })
+      this.update({ isLoading: false, isAuthenticated: true, user, token: data.accessToken, authStatus: "AUTHENTICATED" })
       return { success: true, user }
     } catch (err) {
-      this.update({ isAuthenticated: false, user: null, token: null, authStatus: "UNAUTHENTICATED" })
-      return { success: false, error: "Invalid email or password" }
+      this.update({ isLoading: false, isAuthenticated: false, user: null, token: null, authStatus: "UNAUTHENTICATED" })
+      return { success: false, error: loginErrorMessage(err) }
     }
   }
 

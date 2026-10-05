@@ -29,6 +29,14 @@ export async function exportAuditHandler(req: Request, res: Response): Promise<v
   const q = req.query as unknown as ExportAuditQuery;
   const { items, format } = await service.exportAudit(q);
 
+  await service.logAuditExport(
+    req.auth!.userId,
+    format,
+    items.length,
+    req.context.ipAddress,
+    req.context.userAgent,
+  );
+
   if (format === "csv") {
     const csv = toCsv(items);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -225,10 +233,22 @@ function toCsv(items: AuditLogListItem[]): string {
 }
 
 function csvEscape(v: string): string {
-  if (/[",\r\n]/.test(v)) {
-    return `"${v.replace(/"/g, '""')}"`;
+  // Neutralize spreadsheet formula injection (=, +, -, @, tab, CR) before
+  // quoting. Titles and names are user-controlled and end up in Excel.
+  const value = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
   }
-  return v;
+  return value;
+}
+
+function escapeHtml(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // =============================================================================
@@ -281,15 +301,15 @@ function toPdfHtml(items: AuditLogListItem[], q: ExportAuditQuery): string {
 
   const rows = items.map((it) => `
     <tr>
-      <td>${it.timestamp.toISOString().slice(0, 19).replace("T", " ")}</td>
-      <td>${it.actorName || it.user.name || "—"}</td>
-      <td>${it.user.role || "—"}</td>
-      <td>${labelForAction(it.action)}</td>
-      <td>${it.category}</td>
-      <td>${it.targetName || it.entity.type || "—"}</td>
-      <td style="color:${RESULT_COLORS[it.result] || '#111'}">${it.result}</td>
-      <td style="color:${SEVERITY_COLORS[it.severity] || '#111'}">${it.severity}</td>
-      <td>${it.ipAddress || "—"}</td>
+      <td>${escapeHtml(it.timestamp.toISOString().slice(0, 19).replace("T", " "))}</td>
+      <td>${escapeHtml(it.actorName || it.user.name || "—")}</td>
+      <td>${escapeHtml(it.user.role || "—")}</td>
+      <td>${escapeHtml(labelForAction(it.action))}</td>
+      <td>${escapeHtml(it.category)}</td>
+      <td>${escapeHtml(it.targetName || it.entity.type || "—")}</td>
+      <td style="color:${RESULT_COLORS[it.result] || '#111'}">${escapeHtml(it.result)}</td>
+      <td style="color:${SEVERITY_COLORS[it.severity] || '#111'}">${escapeHtml(it.severity)}</td>
+      <td>${escapeHtml(it.ipAddress || "—")}</td>
     </tr>`).join("");
 
   return `<!DOCTYPE html>
@@ -315,7 +335,7 @@ function toPdfHtml(items: AuditLogListItem[], q: ExportAuditQuery): string {
   <p class="subtitle">Generated ${now} | ${items.length} records</p>
   <div class="meta">
     <strong>Generated:</strong> ${now}<br>
-    <strong>Filters:</strong> ${filterSummary}<br>
+    <strong>Filters:</strong> ${escapeHtml(filterSummary)}<br>
     <strong>Records:</strong> ${items.length}
   </div>
   <table>

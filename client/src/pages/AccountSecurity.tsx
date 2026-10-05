@@ -196,7 +196,7 @@ export default function AccountSecurity() {
   const otherSessions = sessions.filter((s) => !s.current)
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="Account & Security"
         description="Manage your profile, password, and active sessions."

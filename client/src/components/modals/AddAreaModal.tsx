@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils"
 interface AddAreaModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  areaSet?: "aaccup" | "iso" | "cert"
+  areaSet?: "aaccup" | "iso"
   area?: {
     id: string
     name: string
@@ -40,13 +40,11 @@ interface AddAreaModalProps {
 const setLabel = {
   aaccup: "AACCUP",
   iso: "ISO",
-  cert: "Certification",
 } as const
 
 const setBadgeIcon = {
   aaccup: "bg-amber-100 text-amber-600",
   iso: "bg-blue-100 text-primary-600",
-  cert: "bg-emerald-100 text-emerald-600",
 } as const
 
 // Server requires codes of [A-Z0-9._-] (uppercase). Derive a valid code from
@@ -111,7 +109,7 @@ export function AddAreaModal({ open, onOpenChange, areaSet = "aaccup", area, onS
           name,
           description: description.trim() || "",
           departmentId: department,
-          areaSet: areaSet.toUpperCase() as "AACCUP" | "ISO" | "CERT",
+          areaSet: areaSet.toUpperCase() as "AACCUP" | "ISO",
         })
         onSuccess?.({ id: created.id, title: created.name })
       }

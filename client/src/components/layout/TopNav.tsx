@@ -28,7 +28,7 @@ export function TopNav({ onOpenCommandPalette, onNavigate }: TopNavProps) {
 
   return (
     <header className="h-16 bg-white/80 dark:bg-[#0B1121]/90 backdrop-blur-md border-b border-border dark:border-gray-800 flex-shrink-0">
-      <div className="flex items-center justify-between h-full px-6">
+      <div className="flex items-center justify-between h-full navbar-responsive">
         <div className="flex-1 max-w-xl">
           <button
             onClick={onOpenCommandPalette}
@@ -39,7 +39,6 @@ export function TopNav({ onOpenCommandPalette, onNavigate }: TopNavProps) {
               <Input
                 placeholder="Search documents, users, submissions..."
                 className="pl-10 pr-16 bg-navy-50/50 border-0 hover:bg-navy-50 focus:bg-white focus:ring-1.5 focus:ring-primary/25 transition-all text-[14px] cursor-pointer dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:focus:bg-gray-800"
-                readOnly
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
                 <kbd className="hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-white px-1.5 font-mono text-[10px] font-medium text-gray-400 shadow-soft dark:border-gray-600 dark:bg-gray-800">

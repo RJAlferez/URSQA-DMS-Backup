@@ -3,6 +3,7 @@ import { writeAudit } from "@/modules/audit/audit.service";
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from "@/utils/errors";
 import * as repo from "@/modules/folders/folders.repository";
@@ -27,6 +28,7 @@ import type {
   ResolvedFolderNode,
   ResolvedFolderStructure,
 } from "@/modules/folders/folders.types";
+import { assertFolderAccess, resolveFolderAccess } from "@/modules/folders/folderSharing.service";
 
 // =============================================================================
 // URS-DMS — folders service
@@ -53,15 +55,9 @@ export interface Actor {
 // shortcut would let any account bypass ownership. Department-scoped folders
 // (organization master data / archive folders) remain visible to everyone;
 // personal folders are owner-only.
-function canRead(actor: Actor, folder: { ownerId: string | null; departmentId: string | null }): boolean {
-  if (folder.ownerId === actor.id) return true;
-  if (folder.departmentId !== null) return true;
-  return false;
-}
-
 async function assertCanManage(actor: Actor, folder: { id: string; ownerId: string | null }): Promise<void> {
   if (folder.ownerId === actor.id) return;
-  void writeAudit({
+  await writeAudit({
     action: AUDIT_ACTIONS.ACCESS_DENIED,
     userId: actor.id,
     entity: "folder",
@@ -84,17 +80,16 @@ export async function listFolders(query: ListFoldersQuery, actor: Actor): Promis
   if (!query.includeDeleted) where.deletedAt = null;
   if (query.parentId !== undefined) where.parentId = query.parentId;
   if (query.departmentId) where.departmentId = query.departmentId;
-  if (query.ownerId) where.ownerId = query.ownerId;
   if (query.q) {
     where.name = { contains: query.q, mode: "insensitive" };
   }
 
-  // Rule 1 / D-002: always owner-or-department scoped. The manager bypass was
-  // removed because member roles legitimately hold folders.delete for their
-  // own repository.
-  where.OR = [{ ownerId: actor.id }, { departmentId: { not: null } }];
-
-  return { items: await repo.list(where) };
+  const candidates = await repo.list(where);
+  const items = await Promise.all(candidates.map(async (folder) => {
+    const access = await resolveFolderAccess(actor.id, folder.id);
+    return access === "NONE" ? null : folder;
+  }));
+  return { items: items.filter((folder): folder is FolderListItem => folder !== null) };
 }
 
 // -----------------------------------------------------------------------------
@@ -103,8 +98,8 @@ export async function listFolders(query: ListFoldersQuery, actor: Actor): Promis
 export async function getFolder(id: string, actor: Actor): Promise<FolderDetail> {
   const folder = await repo.findById(id);
   if (!folder) throw new NotFoundError("Folder not found");
-  if (!canRead(actor, folder)) {
-    void writeAudit({
+  if ((await resolveFolderAccess(actor.id, id)) === "NONE") {
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "folder",
@@ -138,12 +133,35 @@ export async function createFolder(
   input: CreateFolderInput,
   actor: Actor,
 ): Promise<FolderDetail> {
-  // Validate parent if specified.
+// Validate parent if specified.
   if (input.parentId) {
     const parent = await repo.findById(input.parentId);
     if (!parent) throw new BadRequestError("Parent folder not found");
+    await assertFolderAccess(actor.id, input.parentId, "EDITOR");
     // Rule 3: reject any create that would land at depth 6 or deeper.
     await assertDestinationDepth(input.parentId);
+  }
+
+  // BUG-3 FIX: a folder may only be scoped to the creator's own department
+  // (or null). Tagging a folder to another department would bypass the
+  // same-department sharing restriction.
+  if (input.departmentId !== undefined && input.departmentId !== null) {
+    const me = await prisma.user.findUnique({ where: { id: actor.id }, select: { departmentId: true } });
+    if (!me?.departmentId || me.departmentId !== input.departmentId) {
+      await writeAudit({
+        action: AUDIT_ACTIONS.ACCESS_DENIED,
+        userId: actor.id,
+        entity: "folder",
+        entityId: undefined,
+        ipAddress: actor.ipAddress,
+        userAgent: actor.userAgent,
+        category: "SECURITY",
+        severity: "WARNING",
+        result: "DENIED",
+        newValue: { reason: "cross_department_folder_tag", departmentId: input.departmentId },
+      });
+      throw new ForbiddenError("You may only scope a folder to your own department");
+    }
   }
 
   const folder = await repo.create({
@@ -182,6 +200,28 @@ export async function updateFolder(
   if (!existing) throw new NotFoundError("Folder not found");
   await assertCanManage(actor, existing);
 
+  // BUG-3 FIX: a folder may only be scoped to the creator's own department.
+  // UPDATE: prevent the owner from changing a folder's department to one they don't
+  // belong to (would bypass the same-department sharing restriction).
+  if (input.departmentId !== undefined && input.departmentId !== null) {
+    const me = await prisma.user.findUnique({ where: { id: actor.id }, select: { departmentId: true } });
+    if (!me?.departmentId || me.departmentId !== input.departmentId) {
+      await writeAudit({
+        action: AUDIT_ACTIONS.ACCESS_DENIED,
+        userId: actor.id,
+        entity: "folder",
+        entityId: id,
+        ipAddress: actor.ipAddress,
+        userAgent: actor.userAgent,
+        category: "SECURITY",
+        severity: "WARNING",
+        result: "DENIED",
+        newValue: { reason: "cross_department_folder_tag", departmentId: input.departmentId },
+      });
+      throw new ForbiddenError("You may only scope a folder to your own department");
+    }
+  }
+
   // Circular-loop guard: refuse to move folder into its own subtree.
   if (input.parentId !== undefined && input.parentId !== null) {
     if (input.parentId === id) {
@@ -193,6 +233,26 @@ export async function updateFolder(
     }
     const parent = await repo.findById(input.parentId);
     if (!parent) throw new BadRequestError("Parent folder not found");
+    // BUG-1 FIX: destination folder authorization — require EDITOR or OWNER access
+    // to prevent a user from moving their folder under another user's folder,
+    // which would grant them cascade-delete and permission inheritance on the
+    // destination tree.
+    const destAccess = await resolveFolderAccess(actor.id, input.parentId);
+    if (!(destAccess === "EDITOR" || destAccess === "OWNER")) {
+      await writeAudit({
+        action: AUDIT_ACTIONS.ACCESS_DENIED,
+        userId: actor.id,
+        entity: "folder",
+        entityId: input.parentId,
+        ipAddress: actor.ipAddress,
+        userAgent: actor.userAgent,
+        category: "SECURITY",
+        severity: "WARNING",
+        result: "DENIED",
+        newValue: { reason: "cross_user_folder_move_destination", required: "EDITOR", actual: destAccess },
+      });
+      throw new NotFoundError("Folder not found");
+    }
     // Rule 3: reject a move that would place this folder at depth 6+.
     await assertDestinationDepth(input.parentId);
   }
@@ -242,7 +302,7 @@ export async function softDeleteFolder(id: string, actor: Actor): Promise<void> 
   // Rule 1: only the owner can delete a personal folder; direct-ID access to
   // another account's folder never reveals existence.
   if (existing.ownerId !== actor.id) {
-    void writeAudit({
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "folder",
@@ -278,9 +338,9 @@ export async function softDeleteFolder(id: string, actor: Actor): Promise<void> 
 // -----------------------------------------------------------------------------
 const MAX_FOLDER_DEPTH = 5;
 
-function assertOwner(actor: Actor, folder: { id: string; ownerId: string | null }): void {
+async function assertOwner(actor: Actor, folder: { id: string; ownerId: string | null }): Promise<void> {
   if (folder.ownerId !== actor.id) {
-    void writeAudit({
+    await writeAudit({
       action: AUDIT_ACTIONS.ACCESS_DENIED,
       userId: actor.id,
       entity: "folder",
@@ -326,7 +386,7 @@ export async function restoreFolder(
 ): Promise<FolderDetail> {
   const existing = await repo.findById(id, true);
   if (!existing) throw new NotFoundError("Folder not found");
-  assertOwner(actor, existing);
+  await assertOwner(actor, existing);
   if (!existing.deletedAt) throw new BadRequestError("Folder is not deleted");
 
   // Resolve destination: explicit target, else original parent if it still
@@ -418,7 +478,7 @@ export async function copyFolder(
 ): Promise<{ folder?: FolderDetail; job?: FolderCopyJobView }> {
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("Folder not found");
-  assertOwner(actor, existing);
+  await assertOwner(actor, existing);
   if (input.targetParentId) {
     const target = await repo.findById(input.targetParentId);
     if (!target || target.ownerId !== actor.id) throw new NotFoundError("Destination folder not found");
@@ -606,7 +666,7 @@ export async function getCopyJob(id: string, actor: Actor): Promise<FolderCopyJo
 export async function permanentDeleteFolder(id: string, actor: Actor): Promise<void> {
   const existing = await repo.findById(id, true);
   if (!existing) throw new NotFoundError("Folder not found");
-  assertOwner(actor, existing);
+  await assertOwner(actor, existing);
 
   await repo.permanentDelete(id);
   await writeAudit({
@@ -625,7 +685,7 @@ export async function permanentDeleteFolder(id: string, actor: Actor): Promise<v
 export async function pinFolder(id: string, actor: Actor): Promise<void> {
   const existing = await repo.findById(id);
   if (!existing) throw new NotFoundError("Folder not found");
-  assertOwner(actor, existing);
+  await assertOwner(actor, existing);
   await prisma.repositoryPin.upsert({
     where: { ownerId_folderId: { ownerId: actor.id, folderId: id } },
     create: { ownerId: actor.id, folderId: id },
@@ -759,7 +819,7 @@ export async function resolveMyFolderStructure(actor: Actor): Promise<ResolvedFo
 export async function getFolderInfo(id: string, actor: Actor) {
   const folder = await repo.findById(id);
   if (!folder) throw new NotFoundError("Folder not found");
-  assertOwner(actor, folder);
+  await assertFolderAccess(actor.id, id, "VIEWER");
   return repo.getFolderInfo(id);
 }
 
@@ -782,7 +842,7 @@ export async function downloadFolderZip(
 ): Promise<{ filename: string; stream: Readable }> {
   const folder = await repo.findById(id);
   if (!folder) throw new NotFoundError("Folder not found");
-  assertOwner(actor, folder);
+  await assertFolderAccess(actor.id, id, "VIEWER");
 
   // Collect the active subtree with safe relative paths.
   interface Node {

@@ -15,14 +15,14 @@ import { AUDIT_ACTIONS, type AuditAction } from "@/config/constants";
 // is the Prisma model key, and `audit` carries the per-action audit constants.
 // =============================================================================
 
-export type OrgEntityName = "college" | "department" | "office" | "program";
+export type OrgEntityName = "campus" | "college" | "department" | "office" | "program";
 
 export interface OrgEntityConfig {
   entity: OrganizationEntity;
   name: OrgEntityName;
   path: string;
   label: string;
-  model: "college" | "department" | "office" | "program";
+  model: "campus" | "college" | "department" | "office" | "program";
   audit: {
     created: AuditAction;
     updated: AuditAction;
@@ -33,6 +33,20 @@ export interface OrgEntityConfig {
 }
 
 export const ORG_ENTITIES: Record<OrgEntityName, OrgEntityConfig> = {
+  campus: {
+    entity: "CAMPUS",
+    name: "campus",
+    path: "campuses",
+    label: "Campus",
+    model: "campus",
+    audit: {
+      created: AUDIT_ACTIONS.CAMPUS_CREATED,
+      updated: AUDIT_ACTIONS.CAMPUS_UPDATED,
+      archived: AUDIT_ACTIONS.CAMPUS_ARCHIVED,
+      restored: AUDIT_ACTIONS.CAMPUS_RESTORED,
+      rolledBack: AUDIT_ACTIONS.ORGANIZATION_CAMPUS_ROLLED_BACK,
+    },
+  },
   college: {
     entity: "COLLEGE",
     name: "college",
@@ -103,6 +117,8 @@ export interface OrganizationRecordRow {
   code: string;
   description: string | null;
   displayOrder: number;
+  campusId: string | null;
+  campusName: string | null;
   collegeId: string | null;
   collegeName: string | null;
   departmentId: string | null;
@@ -122,6 +138,7 @@ export interface OrgSnapshotData {
   code: string;
   description: string | null;
   displayOrder: number;
+  campusId: string | null;
   collegeId: string | null;
   departmentId: string | null;
   headId: string | null;
@@ -152,12 +169,13 @@ export interface OrgTreeNode {
   code: string;
   description: string | null;
   level: ProgramLevel | null;
+  colleges: OrgTreeNode[];
   departments: OrgTreeNode[];
   offices: OrgTreeNode[];
   programs: OrgTreeNode[];
 }
 
 export interface OrganizationTree {
-  colleges: OrgTreeNode[];
+  campuses: OrgTreeNode[];
   unassigned: OrgTreeNode;
 }

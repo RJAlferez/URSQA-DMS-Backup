@@ -6,6 +6,7 @@ import type {
   RequestStatus,
   UserStatus,
 } from "@prisma/client";
+import { isFailedAuditAction } from "@/config/constants";
 import type { ReportFilters } from "@/modules/reports/reports.types";
 
 // =============================================================================
@@ -534,6 +535,7 @@ export const AUDIT_REPORT_SELECT = {
   id: true,
   createdAt: true,
   action: true,
+  result: true,
   entity: true,
   entityId: true,
   ipAddress: true,
@@ -552,15 +554,34 @@ type AuditReportRowRaw = Prisma.AuditLogGetPayload<{
   select: typeof AUDIT_REPORT_SELECT;
 }>;
 
-const FAILED_AUDIT_ACTIONS = new Set<string>([
+// Legacy rows created before the `result` column existed were back-filled with
+// the DEFAULT 'SUCCESS' by the additive migration, so for those actions we must
+// fall back to the action name to avoid reporting a historical failed login or
+// denial as SUCCESS. NEW rows always carry the authoritative `result`.
+const LEGACY_DENIED_ACTIONS = new Set<string>([
+  "auth.permission_denied",
+  "auth.access_denied",
+]);
+const LEGACY_FAILED_ACTIONS = new Set<string>([
   "auth.login.failed",
   "auth.refresh.failed",
   "auth.refresh.reuse_detected",
-  "auth.permission_denied",
 ]);
 
-function deriveStatus(action: string): "SUCCESS" | "FAILED" {
-  return FAILED_AUDIT_ACTIONS.has(action) ? "FAILED" : "SUCCESS";
+/**
+ * Authoritative audit status for report rows:
+ *   - stored result wins (SUCCESS / FAILED / DENIED),
+ *   - legacy rows whose result was defaulted to SUCCESS fall back to the
+ *     action name so denials stay DENIED (never FAILED) and failures stay FAILED.
+ */
+export function reportAuditStatus(
+  result: string,
+  action: string,
+): "SUCCESS" | "FAILED" | "DENIED" {
+  if (result === "FAILED" || result === "DENIED") return result;
+  if (LEGACY_DENIED_ACTIONS.has(action)) return "DENIED";
+  if (isFailedAuditAction(action) || LEGACY_FAILED_ACTIONS.has(action)) return "FAILED";
+  return "SUCCESS";
 }
 
 /** Module label = action prefix before the first "." (matches audit module). */
@@ -568,8 +589,6 @@ export function deriveModule(action: string): string {
   const i = action.indexOf(".");
   return i === -1 ? action : action.slice(0, i);
 }
-
-export { deriveStatus };
 
 export async function listAuditForReport(
   filters: ReportFilters,
@@ -586,9 +605,9 @@ export async function listAuditForReport(
   if (filters.userId) where.userId = filters.userId;
   if (filters.entity) where.entity = { equals: filters.entity, mode: "insensitive" };
   if (filters.status) {
-    where.action = deriveStatus(filters.status) === "FAILED"
-      ? { in: [...FAILED_AUDIT_ACTIONS] }
-      : { notIn: [...FAILED_AUDIT_ACTIONS] };
+    // Filter on the stored result so FAILED excludes DENIED (authorization
+    // denials are not operation failures).
+    where.result = filters.status;
   }
   const userFilter: Prisma.UserWhereInput = {};
   if (filters.roleId) userFilter.roleId = filters.roleId;
@@ -611,6 +630,7 @@ export async function listAuditForReport(
 export async function auditAggregates(filters: ReportFilters): Promise<{
   total: number;
   byAction: { action: string; _count: number }[];
+  byActionResult: { action: string; result: string; _count: number }[];
 }> {
   const where: Prisma.AuditLogWhereInput = {};
   if (filters.from || filters.to) {
@@ -621,18 +641,22 @@ export async function auditAggregates(filters: ReportFilters): Promise<{
   }
   if (filters.userId) where.userId = filters.userId;
   if (filters.status) {
-    where.action = deriveStatus(filters.status) === "FAILED"
-      ? { in: [...FAILED_AUDIT_ACTIONS] }
-      : { notIn: [...FAILED_AUDIT_ACTIONS] };
+    where.result = filters.status;
   }
 
-  const [total, byAction] = await Promise.all([
+  const [total, byAction, byActionResult] = await Promise.all([
     prisma.auditLog.count({ where }),
     prisma.auditLog.groupBy({ by: ["action"], _count: { _all: true }, where }),
+    prisma.auditLog.groupBy({ by: ["action", "result"], _count: { _all: true }, where }),
   ]);
   return {
     total,
     byAction: byAction.map((r) => ({ action: r.action, _count: countOf(r) })),
+    byActionResult: byActionResult.map((r) => ({
+      action: r.action,
+      result: r.result,
+      _count: countOf(r),
+    })),
   };
 }
 

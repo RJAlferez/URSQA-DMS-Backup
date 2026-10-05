@@ -447,13 +447,10 @@ export async function auditReport(
     timestamp: r.createdAt,
     action: r.action,
     module: deriveModule(r.action),
-    status:
-      r.action === "auth.login.failed" ||
-      r.action === "auth.refresh.failed" ||
-      r.action === "auth.refresh.reuse_detected" ||
-      r.action === "auth.permission_denied"
-        ? "FAILED"
-        : "SUCCESS",
+    // Authoritative status: stored result wins; legacy defaulted rows fall back
+    // to the action list so denials stay DENIED (never FAILED) and failures
+    // stay FAILED.
+    status: repo.reportAuditStatus(r.result, r.action),
     userId: r.user?.id ?? null,
     userName: r.user ? fullName(r.user.firstName, r.user.lastName) : null,
     userEmail: maskEmail(r.user?.email ?? null),
@@ -463,12 +460,19 @@ export async function auditReport(
     ipAddress: r.ipAddress,
   }));
 
-  const successCount = records.length
-    ? records.filter((r) => r.status === "SUCCESS").length
-    : agg.byAction
-        .filter((a) => a.action !== "auth.login.failed" && a.action !== "auth.refresh.failed" && a.action !== "auth.refresh.reuse_detected" && a.action !== "auth.permission_denied")
-        .reduce((a, r) => a + r._count, 0);
-  const failedCount = agg.total - successCount;
+  // Summary counts are computed per (action, result) group and classified with
+  // the same authoritative rule as the rows, so legacy rows defaulted to
+  // SUCCESS still count as failures/denials and new DENIED rows are never
+  // folded into FAILED.
+  let successCount = 0;
+  let failedCount = 0;
+  let deniedCount = 0;
+  for (const group of agg.byActionResult) {
+    const status = repo.reportAuditStatus(group.result, group.action);
+    if (status === "SUCCESS") successCount += group._count;
+    else if (status === "FAILED") failedCount += group._count;
+    else deniedCount += group._count;
+  }
 
   const byModuleMap = new Map<string, number>();
   for (const b of agg.byAction) {
@@ -480,6 +484,7 @@ export async function auditReport(
     totalEvents: agg.total,
     successCount,
     failedCount,
+    deniedCount,
     byModule: Array.from(byModuleMap.entries()).map(([label, value]) => ({ label, value })),
     byAction: agg.byAction.map((b) => ({ label: b.action, value: b._count })),
   };

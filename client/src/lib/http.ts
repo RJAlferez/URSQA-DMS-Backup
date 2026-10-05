@@ -4,7 +4,9 @@
 // the real backend through these helpers. No local data stores are used.
 // =============================================================================
 
-const API_BASE = (import.meta as unknown as { env: { VITE_API_BASE?: string } }).env.VITE_API_BASE ?? "http://localhost:4000/api/v1";
+// Production builds use same-origin API requests. The explicit dev fallback is
+// also relative so a missing Vite env cannot leak requests to a user's localhost.
+const API_BASE = (import.meta as unknown as { env: { VITE_API_BASE?: string } }).env.VITE_API_BASE ?? "/api/v1";
 
 export { API_BASE };
 
@@ -21,13 +23,18 @@ export function getAccessToken(): string | null {
 export function setServerToken(token: string): void {
   try {
     localStorage.setItem(SERVER_TOKEN_KEY, token);
-  } catch {}
+    sessionExpiredNotified = false;
+  } catch {
+    // Storage may be unavailable (private mode); auth state still lives in memory.
+  }
 }
 
 export function clearServerToken(): void {
   try {
     localStorage.removeItem(SERVER_TOKEN_KEY);
-  } catch {}
+  } catch {
+    // Storage may be unavailable (private mode); nothing to clear.
+  }
 }
 
 export interface ApiEnvelope<T> {
@@ -73,26 +80,41 @@ export class ApiRequestError extends Error {
  * Serialising refresh behind a single shared promise ensures only one refresh
  * runs; the rest await the same result and retry with the new token.
  */
-let refreshInFlight: Promise<boolean> | null = null;
+type RefreshResult = "success" | "invalid" | "unavailable";
 
-async function refreshAccessToken(): Promise<boolean> {
+let refreshInFlight: Promise<RefreshResult> | null = null;
+// A burst of parallel 401s must produce exactly ONE session-expired signal —
+// otherwise every waiter calls authService.logout() and hammers /auth/logout.
+let sessionExpiredNotified = false;
+
+async function refreshAccessToken(): Promise<RefreshResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: "{}",
+      signal: controller.signal,
     });
     const refreshPayload = await refreshResponse.json() as
       | ApiEnvelope<{ accessToken: string }>
       | ApiErrorEnvelope;
     if (refreshResponse.ok && refreshPayload.success) {
       setServerToken(refreshPayload.data.accessToken);
-      return true;
+      return "success";
     }
-    return false;
+    // Only an explicit auth rejection proves that the refresh session is no
+    // longer valid. Rate limits, 5xx responses, and other temporary failures
+    // must not be turned into an automatic logout.
+    return refreshResponse.status === 401 || refreshResponse.status === 403
+      ? "invalid"
+      : "unavailable";
   } catch {
-    return false;
+    return "unavailable";
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -127,13 +149,19 @@ async function requestEnvelope<T>(
       });
     }
     const refreshed = await refreshInFlight;
-    if (refreshed) {
+    if (refreshed === "success") {
       return requestEnvelope<T>(method, path, body, true);
     }
-    clearServerToken();
-    // Expired session: notify the auth layer so the UI returns to the login
-    // screen instead of showing broken pages (Sprint 7.8 acceptance).
-    window.dispatchEvent(new CustomEvent("urs:session-expired"));
+    if (refreshed === "invalid") {
+      clearServerToken();
+      // Expired session: notify the auth layer so the UI returns to the login
+      // screen instead of showing broken pages. Only the first 401 of a burst
+      // dispatches — N parallel requests must not trigger N logouts.
+      if (!sessionExpiredNotified) {
+        sessionExpiredNotified = true;
+        window.dispatchEvent(new CustomEvent("urs:session-expired"));
+      }
+    }
   }
 
   if (res.status === 204) {

@@ -31,10 +31,19 @@ import { SessionManagementModal } from "@/components/modals/SessionManagementMod
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/lib/theme"
 import { toast } from "@/lib/toast"
-import { ROLE_LABELS } from "@/lib/permissions"
+import { ROLE_LABELS, hasServerPermission } from "@/lib/permissions"
 import { getSystemSettings, updateSystemSettings, type SystemSettingsView } from "@/services/admin"
 import { getDashboardStorage, type StorageStats } from "@/services/dashboard"
 import { authService } from "@/services/auth"
+import {
+  createAnnouncement,
+  getAnnouncementAudienceOptions,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  type AnnouncementAudienceOptions,
+  type NotificationFrequency,
+} from "@/services/notifications"
+import { Textarea } from "@/components/ui/Textarea"
 import { cn } from "@/lib/utils"
 
 type SettingsSection = "security" | "notifications" | "system" | "appearance" | "files" | "access"
@@ -62,18 +71,52 @@ export default function Settings() {
   const [timezone, setTimezone] = useState("Asia/Manila")
   const [dateFormat, setDateFormat] = useState<"mdy" | "dmy" | "ymd">("mdy")
   const [dashboardView, setDashboardView] = useState<"overview" | "submissions" | "documents">("overview")
+  const [notificationEmailEnabled, setNotificationEmailEnabled] = useState(true)
+  const [notificationFrequency, setNotificationFrequency] = useState<NotificationFrequency>("IMMEDIATE")
+  const [deadlineHours, setDeadlineHours] = useState(24)
+  const [audienceOptions, setAudienceOptions] = useState<AnnouncementAudienceOptions | null>(null)
+  const [announcementTitle, setAnnouncementTitle] = useState("")
+  const [announcementMessage, setAnnouncementMessage] = useState("")
+  const [announcementAttachment, setAnnouncementAttachment] = useState<File | null>(null)
+  const [announcementAudience, setAnnouncementAudience] = useState({ campusIds: [] as string[], collegeIds: [] as string[], departmentIds: [] as string[], programIds: [] as string[] })
 
-  const [notifications, setNotifications] = useState({
-    submissions: true,
-    approvals: true,
-    announcements: false,
-    security: true,
+  const [notifications, setNotifications] = useState<{
+    submissions: boolean
+    approvals: boolean
+    announcements: boolean
+    security: boolean
+  }>(() => {
+    const stored = localStorage.getItem("notificationPreferences")
+    if (stored) {
+      try {
+        return { submissions: true, approvals: true, announcements: false, security: true, ...JSON.parse(stored) }
+      } catch {
+        /* ignore malformed stored preferences */
+      }
+    }
+    return { submissions: true, approvals: true, announcements: false, security: true }
   })
 
   useEffect(() => {
-    getSystemSettings().then(setSettings).catch((err) => console.error("Failed to load settings:", err))
+    // Department Coordinators reach the admin portal without admin.settings.read;
+    // requesting the singleton anyway would 403 and write a PERMISSION_DENIED
+    // audit event on every Settings visit.
+    if (hasServerPermission(user, "admin.settings.read")) {
+      getSystemSettings().then(setSettings).catch((err) => console.error("Failed to load settings:", err))
+    }
     getDashboardStorage().then(setStorageStats).catch((err) => console.error("Failed to load storage stats:", err))
-  }, [])
+  }, [user])
+
+  useEffect(() => {
+    getNotificationPreferences().then((preference) => {
+      setNotificationEmailEnabled(preference.emailEnabled)
+      setNotificationFrequency(preference.frequency)
+      setDeadlineHours(preference.deadlineHours)
+    }).catch(() => undefined)
+    if (hasServerPermission(user, "notification.manage")) {
+      getAnnouncementAudienceOptions().then(setAudienceOptions).catch(() => setAudienceOptions(null))
+    }
+  }, [user])
 
   const handleSaveSettings = async (patch: Partial<Omit<SystemSettingsView, "updatedAt" | "updatedById">>) => {
     const updated = settings ? { ...settings, ...patch } : null
@@ -107,7 +150,44 @@ export default function Settings() {
   }
 
   const handleSaveNotifications = async () => {
-    // Notification preferences are currently local-only.
+    localStorage.setItem("notificationPreferences", JSON.stringify(notifications))
+    try {
+      await updateNotificationPreferences({ emailEnabled: notificationEmailEnabled, frequency: notificationFrequency, deadlineHours, timezone })
+      toast.success("Notification preferences saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save notification preferences")
+    }
+  }
+
+  const publishAnnouncement = async () => {
+    if (!announcementTitle.trim() || !announcementMessage.trim()) {
+      toast.error("Enter an announcement title and message")
+      return
+    }
+    try {
+      let metadata: Record<string, unknown> | undefined
+      if (announcementAttachment) {
+        if (announcementAttachment.size > 600_000) {
+          toast.error("Reference files must be 600 KB or smaller")
+          return
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(new Error("Could not read the attachment"))
+          reader.readAsDataURL(announcementAttachment)
+        })
+        metadata = { attachment: { name: announcementAttachment.name, mimeType: announcementAttachment.type || "application/octet-stream", dataUrl } }
+      }
+      const result = await createAnnouncement({ title: announcementTitle.trim(), message: announcementMessage.trim(), audience: announcementAudience, metadata })
+      toast.success(`Announcement sent to ${result.created} user${result.created === 1 ? "" : "s"}`)
+      setAnnouncementTitle("")
+      setAnnouncementMessage("")
+      setAnnouncementAttachment(null)
+      setAnnouncementAudience({ campusIds: [], collegeIds: [], departmentIds: [], programIds: [] })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to publish announcement")
+    }
   }
 
   const handleLogoutAll = async () => {
@@ -135,13 +215,13 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
             title="Settings"
             description="Manage your account settings and preferences"
           />
 
-          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+          <div className="flex flex-col lg:flex-row responsive-gap">
             <div className="w-full lg:w-64 flex-shrink-0">
               <Card className="border-border/70 shadow-soft">
                 <CardContent className="p-2">
@@ -229,35 +309,55 @@ export default function Settings() {
               )}
 
               {activeSection === "notifications" && (
-                <Card className="border-border/70 shadow-soft">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-[16px] font-semibold">Notification Preferences</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {[
-                      { key: "submissions", label: "Submission Alerts", desc: "Get notified when documents are submitted" },
-                      { key: "approvals", label: "Approval Alerts", desc: "Get notified on approval/rejection actions" },
-                      { key: "announcements", label: "System Announcements", desc: "Receive system-wide announcements" },
-                      { key: "security", label: "Security Notifications", desc: "Get alerts for security-related events" },
-                    ].map((item) => (
-                      <div key={item.key} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
-                        <div>
-                          <p className="text-[14px] font-medium text-gray-900">{item.label}</p>
-                          <p className="text-[13px] text-gray-500 mt-0.5">{item.desc}</p>
+                <div className="space-y-6">
+                  <Card className="border-border/70 shadow-soft">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-[16px] font-semibold">Notification Preferences</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {[
+                        { key: "submissions", label: "Submission Alerts", desc: "Get notified when documents are submitted" },
+                        { key: "approvals", label: "Approval Alerts", desc: "Get notified on approval/rejection actions" },
+                        { key: "announcements", label: "System Announcements", desc: "Receive system-wide announcements" },
+                        { key: "security", label: "Security Notifications", desc: "Get alerts for security-related events" },
+                      ].map((item) => (
+                        <div key={item.key} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
+                          <div>
+                            <p className="text-[14px] font-medium text-gray-900">{item.label}</p>
+                            <p className="text-[13px] text-gray-500 mt-0.5">{item.desc}</p>
+                          </div>
+                          <Switch checked={notifications[item.key as keyof typeof notifications]} onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, [item.key]: checked }))} />
                         </div>
-                        <Switch
-                          checked={notifications[item.key as keyof typeof notifications]}
-                          onCheckedChange={(checked) =>
-                            setNotifications((prev) => ({ ...prev, [item.key]: checked }))
-                          }
-                        />
+                      ))}
+                      <div className="grid gap-4 border-t border-gray-100 pt-4 md:grid-cols-3">
+                        <div className="flex items-center justify-between gap-3 md:col-span-3">
+                          <div><p className="text-[14px] font-medium text-gray-900">Email notifications</p><p className="text-[13px] text-gray-500">Send notification updates to your registered email.</p></div>
+                          <Switch checked={notificationEmailEnabled} onCheckedChange={setNotificationEmailEnabled} />
+                        </div>
+                        <div className="grid gap-2"><Label className="text-[13px] font-medium text-gray-700">Email schedule</Label><Select value={notificationFrequency} onValueChange={(value) => setNotificationFrequency(value as NotificationFrequency)}><SelectTrigger className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="IMMEDIATE">Immediately</SelectItem><SelectItem value="DAILY">Daily digest</SelectItem><SelectItem value="WEEKLY">Weekly digest</SelectItem><SelectItem value="MONTHLY">Monthly digest</SelectItem></SelectContent></Select></div>
+                        <div className="grid gap-2"><Label className="text-[13px] font-medium text-gray-700">Deadline reminder</Label><Select value={String(deadlineHours)} onValueChange={(value) => setDeadlineHours(Number(value))}><SelectTrigger className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 hour before</SelectItem><SelectItem value="3">3 hours before</SelectItem><SelectItem value="6">6 hours before</SelectItem><SelectItem value="24">24 hours before</SelectItem><SelectItem value="72">3 days before</SelectItem></SelectContent></Select></div>
+                        <div className="flex items-end"><p className="text-[12px] text-gray-500">Digest emails group ordinary notifications. Deadline reminders remain separate.</p></div>
                       </div>
-                    ))}
-                  </CardContent>
-                  <div className="flex justify-end px-4 pb-4">
-                    <Button className="h-10 px-5 shadow-soft" onClick={handleSaveNotifications}>Save Preferences</Button>
-                  </div>
-                </Card>
+                    </CardContent>
+                    <div className="flex justify-end px-5 pb-5 md:px-6 md:pb-6"><Button className="h-10 px-5 shadow-soft" onClick={handleSaveNotifications}>Save Preferences</Button></div>
+                  </Card>
+
+                  {hasServerPermission(user, "notification.manage") && (
+                    <Card className="border-border/70 shadow-soft">
+                      <CardHeader className="pb-4"><CardTitle className="text-[16px] font-semibold">Create Announcement</CardTitle><p className="text-[13px] text-gray-500">Send an in-app and email announcement to selected campuses, colleges, departments, or programs.</p></CardHeader>
+                      <CardContent className="space-y-4">
+                        <Input value={announcementTitle} onChange={(event) => setAnnouncementTitle(event.target.value)} placeholder="Announcement title" />
+                        <Textarea value={announcementMessage} onChange={(event) => setAnnouncementMessage(event.target.value)} placeholder="Write your announcement..." rows={5} />
+                        <div className="grid gap-2"><Label className="text-[13px] font-medium text-gray-700">Reference image or file (optional, 600 KB max)</Label><Input type="file" onChange={(event) => setAnnouncementAttachment(event.target.files?.[0] ?? null)} /></div>
+                        <p className="text-[12px] text-gray-500">Leave all audience lists empty to notify every active user. Multiple selections are combined.</p>
+                        {audienceOptions && <div className="grid gap-4 md:grid-cols-2">
+                          {(["campuses", "colleges", "departments", "programs"] as const).map((key) => <div key={key} className="grid gap-2"><Label className="text-[13px] font-medium capitalize text-gray-700">{key}</Label><select multiple value={announcementAudience[`${key.slice(0, -1)}Ids` as "campusIds" | "collegeIds" | "departmentIds" | "programIds"]} onChange={(event) => setAnnouncementAudience((previous) => ({ ...previous, [`${key.slice(0, -1)}Ids`]: Array.from(event.target.selectedOptions, (option) => option.value) }))} className="min-h-24 rounded-xl border border-border bg-white px-3 py-2 text-[13px]">{audienceOptions[key].map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div>)}
+                        </div>}
+                      </CardContent>
+                      <div className="flex justify-end px-5 pb-5 md:px-6"><Button className="h-10 px-5 shadow-soft" onClick={() => void publishAnnouncement()}>Publish Announcement</Button></div>
+                    </Card>
+                  )}
+                </div>
               )}
 
               {activeSection === "system" && (

@@ -1,5 +1,5 @@
 import { AUDIT_ACTIONS } from "@/config/constants";
-import { writeAudit } from "@/modules/audit/audit.service";
+import { writeAudit, writeAuditInTransaction } from "@/modules/audit/audit.service";
 import { notifyUser } from "@/modules/notifications/notifications.service";
 import { prisma } from "@/lib/prisma";
 import {
@@ -291,7 +291,11 @@ async function deliverRequestedDocument(
     });
   }
 
-  await writeAudit({
+  // Transactional audit: written through `tx` so the delivered event commits
+  // with the delivery and rolls back with the approval transaction. Using the
+  // global client here previously left a false SUCCESS row if the transaction
+  // later aborted.
+  await writeAuditInTransaction(tx, {
     action: AUDIT_ACTIONS.REQUEST_FULFILLED_DELIVERED,
     userId: actor.id,
     entity: "request",

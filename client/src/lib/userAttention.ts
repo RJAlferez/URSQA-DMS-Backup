@@ -37,7 +37,7 @@ const isOverdue = (dateStr: string | null, status: string) => {
   return new Date(dateStr).getTime() < NOW()
 }
 
-export async function refreshUserAttention(userId: string): Promise<void> {
+export async function refreshUserAttention(userId: string, permissions?: string[]): Promise<void> {
   if (cachedUserId !== userId) {
     cached = null
     lastFetch = 0
@@ -47,11 +47,17 @@ export async function refreshUserAttention(userId: string): Promise<void> {
     listeners.forEach((l) => l(cached!))
     return
   }
+  // Only call endpoints the user is authorized for. A READ_ONLY account has no
+  // aaccup.* / request.create permissions; calling anyway produced a
+  // PERMISSION_DENIED audit event per endpoint on every 30s poll.
+  const can = (code: string) => !permissions || permissions.includes(code)
   try {
     const [tasks, submissions, requests] = await Promise.all([
-      listMyOnlineTasks(),
-      listAllOnlineSubmissions(),
-      listRequests({ submittedBy: userId }),
+      can("aaccup.read") ? listMyOnlineTasks() : Promise.resolve([]),
+      can("aaccup.submission.read") ? listAllOnlineSubmissions() : Promise.resolve([]),
+      can("request.create") || can("request.manage")
+        ? listRequests({ submittedBy: userId })
+        : Promise.resolve([]),
     ])
     const returnedSubs = submissions.filter((s) => s.status === "NEEDS_REVISION")
     const dueSoon = tasks.filter((t) => within7Days(t.dueDate) && t.status !== "COMPLETED" && t.status !== "CANCELLED")
@@ -66,6 +72,20 @@ export async function refreshUserAttention(userId: string): Promise<void> {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 5)
 
+    // Preserve array identity when the poll returns identical data so effects
+    // keyed on the arrays (e.g. the accreditation progress loader) do not
+    // refetch the entire area/requirement tree every 30 seconds.
+    const stable = <T,>(next: T[], prev: T[] | undefined, same: (a: T, b: T) => boolean): T[] => {
+      if (prev && prev.length === next.length && prev.every((item, i) => same(item, next[i]!))) return prev
+      return next
+    }
+    const sameSubmission = (a: OnlineSubmissionListItem, b: OnlineSubmissionListItem) =>
+      a.id === b.id && a.status === b.status && a.submittedAt === b.submittedAt
+    const sameTask = (a: OnlineAaccupTask, b: OnlineAaccupTask) =>
+      a.id === b.id && a.status === b.status && a.dueDate === b.dueDate
+    const sameRequest = (a: DocumentRequest, b: DocumentRequest) =>
+      a.id === b.id && a.status === b.status && a.updatedAt === b.updatedAt
+
     cached = {
       returnedSubmissions: returnedSubs.length,
       dueSoonTasks: dueSoon.length,
@@ -75,11 +95,11 @@ export async function refreshUserAttention(userId: string): Promise<void> {
       approvedRequests: approvedReqs.length,
       fulfilledRequests: fulfilledReqs.length,
       refusedRequests: rejectedReqs.length,
-      allSubmissions: submissions,
-      returnedSubmissionsList: returnedSubs,
-      overdueTasksList: overdue,
-      dueSoonTasksList: dueSoon,
-      recentRequestUpdates: requestUpdates,
+      allSubmissions: stable(submissions, cached?.allSubmissions, sameSubmission),
+      returnedSubmissionsList: stable(returnedSubs, cached?.returnedSubmissionsList, sameSubmission),
+      overdueTasksList: stable(overdue, cached?.overdueTasksList, sameTask),
+      dueSoonTasksList: stable(dueSoon, cached?.dueSoonTasksList, sameTask),
+      recentRequestUpdates: stable(requestUpdates, cached?.recentRequestUpdates, sameRequest),
       loading: false,
     }
     lastFetch = NOW()
@@ -124,8 +144,12 @@ export function getCachedAttention(): UserAttention {
   }
 }
 
-export function subscribeUserAttention(fn: (a: UserAttention) => void): () => void {
+export function subscribeUserAttention(
+  fn: (a: UserAttention) => void,
+  userId?: string,
+): () => void {
   listeners.add(fn)
-  if (cached) fn(cached)
+  // Never replay another user's cached counts after an account switch.
+  if (cached && (!userId || cachedUserId === userId)) fn(cached)
   return () => { listeners.delete(fn) }
 }

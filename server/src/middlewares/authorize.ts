@@ -5,13 +5,16 @@ import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
 
 export function requireRole(...allowed: RoleName[]) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     if (!req.auth) {
       next(new ForbiddenError("Not authenticated"));
       return;
     }
     if (!allowed.includes(req.auth.roleName)) {
-      void writeAudit({
+      // Awaited (not fire-and-forget) so the denial is persisted before the
+      // 403 propagates — matching requirePermission/requireAnyPermission and
+      // guaranteeing the security event is never lost on shutdown.
+      await writeAudit({
         action: AUDIT_ACTIONS.PERMISSION_DENIED,
         userId: req.auth.userId,
         entity: "route",

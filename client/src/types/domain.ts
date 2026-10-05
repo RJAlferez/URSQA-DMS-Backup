@@ -88,6 +88,7 @@ export type DocumentStatus =
   | "Archived"
   | "Returned"
   | "Rejected"
+  | "Withdrawn"
 
 export interface Category {
   id: string
@@ -137,7 +138,7 @@ export interface Document {
   /** SHA-256 of the current version's bytes (rule 7 duplicate detection). */
   checksum?: string | null
   /** Latest AACCUP submission status of this file (rule 17 badges). */
-  submissionStatus?: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | null
+  submissionStatus?: "PENDING" | "APPROVED" | "REJECTED" | "NEEDS_REVISION" | "WITHDRAWN" | null
   /** Soft-delete timestamp (recycle bin rows). */
   deletedAt?: string | null
 }

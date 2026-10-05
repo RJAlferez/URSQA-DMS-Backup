@@ -5,10 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Label } from "@/components/ui/Label"
 import { Switch } from "@/components/ui/Switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select"
 import { useTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 import { getSystemSettings } from "@/services/admin"
 import type { AppSettings } from "@/types/domain"
+import { getNotificationPreferences, updateNotificationPreferences, type NotificationFrequency } from "@/services/notifications"
+import { toast } from "@/lib/toast"
 
 export default function UserSettings() {
   const { theme, setTheme } = useTheme()
@@ -19,6 +22,9 @@ export default function UserSettings() {
   })
   const [compactMode, setCompactMode] = useState(false)
   const [collapsedSidebar, setCollapsedSidebar] = useState(false)
+  const [emailEnabled, setEmailEnabled] = useState(true)
+  const [frequency, setFrequency] = useState<NotificationFrequency>("IMMEDIATE")
+  const [deadlineHours, setDeadlineHours] = useState(24)
   const fetchSettings = useCallback(async () => {
     try {
       const s = await getSystemSettings()
@@ -47,6 +53,23 @@ export default function UserSettings() {
 
   useEffect(() => { fetchSettings() }, [fetchSettings])
 
+  useEffect(() => {
+    getNotificationPreferences().then((preference) => {
+      setEmailEnabled(preference.emailEnabled)
+      setFrequency(preference.frequency)
+      setDeadlineHours(preference.deadlineHours)
+    }).catch(() => undefined)
+  }, [])
+
+  const saveEmailPreferences = async () => {
+    try {
+      await updateNotificationPreferences({ emailEnabled, frequency, deadlineHours })
+      toast.success("Email notification preferences saved")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save preferences")
+    }
+  }
+
   const handleToggle = (field: keyof AppSettings, value: boolean) => {
     const patch = { [field]: value }
     setSettings((prev) => prev ? { ...prev, ...patch } : prev)
@@ -64,7 +87,7 @@ export default function UserSettings() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader title="Settings" description="Manage your preferences" />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -90,6 +113,14 @@ export default function UserSettings() {
                 />
               </div>
             ))}
+            <div className="grid gap-4 border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between"><div><Label className="text-[14px] font-medium text-gray-900">Email notifications</Label><p className="text-[12px] text-gray-500">Use your registered email address.</p></div><Switch checked={emailEnabled} onCheckedChange={setEmailEnabled} /></div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2"><Label className="text-[13px]">Email schedule</Label><Select value={frequency} onValueChange={(value) => setFrequency(value as NotificationFrequency)}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="IMMEDIATE">Immediately</SelectItem><SelectItem value="DAILY">Daily digest</SelectItem><SelectItem value="WEEKLY">Weekly digest</SelectItem><SelectItem value="MONTHLY">Monthly digest</SelectItem></SelectContent></Select></div>
+                <div className="grid gap-2"><Label className="text-[13px]">Deadline reminder</Label><Select value={String(deadlineHours)} onValueChange={(value) => setDeadlineHours(Number(value))}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">1 hour before</SelectItem><SelectItem value="3">3 hours before</SelectItem><SelectItem value="6">6 hours before</SelectItem><SelectItem value="24">24 hours before</SelectItem><SelectItem value="72">3 days before</SelectItem></SelectContent></Select></div>
+              </div>
+              <div className="flex justify-end"><Button size="sm" onClick={() => void saveEmailPreferences()}>Save email preferences</Button></div>
+            </div>
           </CardContent>
         </Card>
 

@@ -16,7 +16,9 @@ function storedTheme(): ThemeMode {
   try {
     const saved = localStorage.getItem(THEME_KEY)
     if (saved === "light" || saved === "dark" || saved === "system") return saved
-  } catch {}
+  } catch {
+    // Use the light theme when browser storage is unavailable.
+  }
   return "light"
 }
 
@@ -56,7 +58,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setIsDark(resolveDark(mode))
     try {
       localStorage.setItem(THEME_KEY, mode)
-    } catch {}
+    } catch {
+      // Theme state remains active for the current tab when storage fails.
+    }
   }
 
   return (

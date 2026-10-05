@@ -1,0 +1,14 @@
+:80 {
+    encode gzip
+
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:4001
+    }
+
+    handle {
+        root * C:/Dev/URS-DMS/client/dist
+        try_files {path} /index.html
+        file_server
+    }
+}

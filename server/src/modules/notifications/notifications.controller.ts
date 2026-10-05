@@ -4,6 +4,7 @@ import * as service from "@/modules/notifications/notifications.service";
 import type {
   CreateAnnouncementBody,
   ListNotificationsQuery,
+  UpdateNotificationPreferenceBody,
 } from "@/modules/notifications/notifications.validator";
 
 // =============================================================================
@@ -54,4 +55,20 @@ export async function createAnnouncementHandler(req: Request, res: Response): Pr
   const input = req.body as CreateAnnouncementBody;
   const result = await service.createAnnouncement(input, toActor(req));
   sendSuccess(res, result, 201);
+}
+
+export async function getNotificationPreferenceHandler(req: Request, res: Response): Promise<void> {
+  const result = await service.getNotificationPreference(toActor(req));
+  sendSuccess(res, result);
+}
+
+export async function updateNotificationPreferenceHandler(req: Request, res: Response): Promise<void> {
+  const input = req.body as UpdateNotificationPreferenceBody;
+  const result = await service.updateNotificationPreference(input, toActor(req));
+  sendSuccess(res, result);
+}
+
+export async function listAnnouncementAudienceOptionsHandler(req: Request, res: Response): Promise<void> {
+  const result = await service.listAnnouncementAudienceOptions(toActor(req));
+  sendSuccess(res, result);
 }

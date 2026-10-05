@@ -41,6 +41,7 @@ function submissionBadge(doc: Document) {
     APPROVED: { label: "Approved", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800" },
     REJECTED: { label: "Rejected", cls: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800" },
     NEEDS_REVISION: { label: "Returned", cls: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800" },
+    WITHDRAWN: { label: "Withdrawn", cls: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/30 dark:text-slate-400 dark:border-slate-800" },
   } as const
   const cfg = config[doc.submissionStatus]
   return <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full border whitespace-nowrap", cfg.cls)}>{cfg.label}</span>
@@ -50,6 +51,7 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [previewAttempt, setPreviewAttempt] = useState(0)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState("")
   const [saving, setSaving] = useState(false)
@@ -63,11 +65,34 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
 
   useEffect(() => {
     if (!document) return
+    let previewObjectUrl: string | null = null
+    let cancelled = false
     setUrl(null); setError(null); setEditing(false); setTab("preview"); setActivity(null)
     setZoom(100); setRotation(0)
     setLoading(true)
-    getOnlineDocumentUrl(document, true).then(setUrl).catch(() => setError("Unable to generate a preview link")).finally(() => setLoading(false))
-  }, [document])
+    getOnlineDocumentUrl(document, true)
+      .then(async (previewUrl) => {
+        const response = await fetch(previewUrl)
+        if (!response.ok) throw new Error("Unable to load file preview")
+        const preview = await response.blob()
+        previewObjectUrl = URL.createObjectURL(preview)
+        if (cancelled) {
+          URL.revokeObjectURL(previewObjectUrl)
+          return
+        }
+        setUrl(previewObjectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setError("Unable to generate a preview link")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl)
+    }
+  }, [document, previewAttempt])
 
   useEffect(() => {
     if (!document || tab !== "activity") return
@@ -122,11 +147,11 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
 
   return (
     <Dialog open={Boolean(document)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[94vw] w-[94vw] h-[92vh] max-h-[92vh] p-0 overflow-hidden flex flex-col [&>button]:hidden dark:bg-[#0B1121]">
+      <DialogContent className="max-w-[94vw] w-[94vw] h-[92vh] max-h-[92vh] p-0 overflow-hidden flex flex-col [&>button]:hidden dark:bg-[#0B1121] max-md:w-full max-md:max-w-none max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:rounded-none">
         {/* Header */}
-        <DialogHeader className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-          <div className="flex items-center justify-between gap-4 pr-10">
-            <div className="min-w-0">
+        <DialogHeader className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex-shrink-0 max-md:px-4 max-md:pt-[max(0.75rem,env(safe-area-inset-top))] max-md:pb-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pr-10">
+            <div className="min-w-0 pr-9 sm:pr-0">
               <DialogTitle className="text-[15px] truncate flex items-center gap-2 dark:text-gray-100">
                 {document.name}
                 {submissionBadge(document)}
@@ -137,15 +162,15 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-              <div className="flex rounded-lg border border-border dark:border-gray-700 p-0.5 bg-gray-50/50 dark:bg-gray-800/50 mr-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 flex-shrink-0 max-md:-mx-1 max-md:px-1 sm:flex-wrap sm:overflow-visible">
+              <div className="flex shrink-0 rounded-lg border border-border dark:border-gray-700 p-0.5 bg-gray-50/50 dark:bg-gray-800/50 sm:mr-1">
                 <button type="button" onClick={() => setTab("preview")} className={cn("px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors", tab === "preview" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-soft" : "text-gray-500 dark:text-gray-400 hover:text-gray-700")}>Preview</button>
                 <button type="button" onClick={() => setTab("activity")} className={cn("px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors", tab === "activity" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-soft" : "text-gray-500 dark:text-gray-400 hover:text-gray-700")}>Details &amp; Activity</button>
               </div>
 
               {/* Zoom controls for images */}
               {(isImage || isPdf) && tab === "preview" && (
-                <div className="flex items-center gap-0.5 mr-1">
+                <div className="hidden items-center gap-0.5 mr-1 sm:flex">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setZoom((z) => Math.max(25, z - 25))} title="Zoom out"><ZoomOut className="w-3.5 h-3.5" /></Button>
                   <span className="text-[11px] text-gray-500 w-10 text-center tabular-nums">{zoom}%</span>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setZoom((z) => Math.min(300, z + 25))} title="Zoom in"><ZoomIn className="w-3.5 h-3.5" /></Button>
@@ -153,19 +178,19 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
                 </div>
               )}
 
-              <Button variant="outline" size="sm" className="h-8 text-[12px]" onClick={() => void openOnlineDocument(document)}><Download className="w-3.5 h-3.5 mr-1.5" /> Download</Button>
-              {tab === "preview" && printable && <Button variant="outline" size="sm" className="h-8 text-[12px]" onClick={printPreview}><Printer className="w-3.5 h-3.5 mr-1.5" /> Print</Button>}
-              {onRename && <Button variant="outline" size="sm" className="h-8 text-[12px]" onClick={() => { setTitle(document.name); setEditing(true) }}><Pencil className="w-3.5 h-3.5 mr-1.5" /> Rename</Button>}
-              {onMove && <Button variant="outline" size="sm" className="h-8 text-[12px]" onClick={() => onMove(document)}><Move className="w-3.5 h-3.5 mr-1.5" /> Move</Button>}
-              {onDelete && <Button variant="outline" size="sm" className="h-8 text-[12px] text-red-600 hover:text-red-700" onClick={() => onDelete(document)}><Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete</Button>}
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400" onClick={onClose}><X className="w-4 h-4" /></Button>
+              <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12px] max-md:w-8 max-md:px-0" title="Download" onClick={() => void openOnlineDocument(document)}><Download className="w-3.5 h-3.5 sm:mr-1.5" /><span className="sr-only sm:not-sr-only">Download</span></Button>
+              {tab === "preview" && printable && <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12px] max-md:w-8 max-md:px-0" title="Print" onClick={printPreview}><Printer className="w-3.5 h-3.5 sm:mr-1.5" /><span className="sr-only sm:not-sr-only">Print</span></Button>}
+              {onRename && <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12px] max-md:w-8 max-md:px-0" title="Rename" onClick={() => { setTitle(document.name); setEditing(true) }}><Pencil className="w-3.5 h-3.5 sm:mr-1.5" /><span className="sr-only sm:not-sr-only">Rename</span></Button>}
+              {onMove && <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12px] max-md:w-8 max-md:px-0" title="Move" onClick={() => onMove(document)}><Move className="w-3.5 h-3.5 sm:mr-1.5" /><span className="sr-only sm:not-sr-only">Move</span></Button>}
+              {onDelete && <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12px] text-red-600 hover:text-red-700 max-md:w-8 max-md:px-0" title="Delete" onClick={() => onDelete(document)}><Trash2 className="w-3.5 h-3.5 sm:mr-1.5" /><span className="sr-only sm:not-sr-only">Delete</span></Button>}
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-gray-400 sm:hidden" title="Close preview" onClick={onClose}><X className="w-4 h-4" /></Button>
             </div>
           </div>
         </DialogHeader>
 
         {/* Admin Actions Panel */}
         {showAdminActions && tab === "preview" && (
-          <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 bg-primary-50/50 dark:bg-blue-900/20 flex items-center gap-2 flex-shrink-0">
+          <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 bg-primary-50/50 dark:bg-blue-900/20 flex items-center gap-2 flex-shrink-0 overflow-x-auto max-md:px-4 max-md:py-2">
             <p className="text-[12px] font-medium text-blue-700 dark:text-blue-400 mr-2">Decision:</p>
             <Button size="sm" variant="default" className="h-8 text-[12px] bg-emerald-600 hover:bg-emerald-700" onClick={() => onApprove?.(document)} disabled={adminLoading}><CheckCircle className="w-3.5 h-3.5 mr-1.5" /> Approve</Button>
             <Button size="sm" variant="outline" className="h-8 text-[12px] border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => onReturn?.(document)} disabled={adminLoading}><RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Return</Button>
@@ -175,9 +200,9 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
         )}
 
         {/* Body */}
-        <div className="flex-1 overflow-auto bg-gray-50 dark:bg-[#0F1520] p-4 sm:p-6">
+          <div className="flex-1 overflow-auto bg-gray-50 dark:bg-[#0F1520] p-3 sm:p-6">
           {editing && (
-            <div className="mb-4 flex items-end gap-2 max-w-md">
+            <div className="mb-4 flex flex-col gap-2 max-w-md sm:flex-row sm:items-end">
               <div className="grid gap-1.5 flex-1"><Label className="text-[12px] text-gray-500">File name</Label><Input className="h-9" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
               <Button size="sm" className="h-9" onClick={() => void submitRename()} disabled={saving || !title.trim()}>{saving ? "Saving..." : "Save"}</Button>
               <Button size="sm" variant="outline" className="h-9" onClick={() => setEditing(false)}>Cancel</Button>
@@ -186,7 +211,7 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
 
           {tab === "activity" ? (
             <div className="h-full overflow-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 sm:gap-3 max-w-2xl mb-4">
                 {[
                   { label: "Name", value: document.name },
                   { label: "Type", value: `${document.type} · ${formatSize(document.size)}` },
@@ -242,7 +267,7 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
               <FileText className="w-10 h-10 text-gray-300 dark:text-gray-600 mb-3" />
               <p className="text-[14px] text-gray-600 dark:text-gray-400">{error}</p>
               <div className="flex items-center gap-2 mt-4">
-                <Button size="sm" variant="outline" onClick={() => { setLoading(true); setError(null); getOnlineDocumentUrl(document, true).then(setUrl).catch(() => setError("Unable to generate a preview link")).finally(() => setLoading(false)) }}><RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry</Button>
+                <Button size="sm" variant="outline" onClick={() => setPreviewAttempt((attempt) => attempt + 1)}><RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry</Button>
                 <Button size="sm" variant="outline" onClick={() => void openOnlineDocument(document)}><Download className="w-3.5 h-3.5 mr-1.5" /> Open file instead</Button>
               </div>
             </div>
@@ -279,7 +304,7 @@ export function FilePreviewModal({ document, onClose, onRename, onMove, onDelete
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-2.5 border-t border-gray-100 dark:border-gray-800 flex-shrink-0 flex items-center gap-2 text-[12px] text-gray-400 dark:text-gray-500 flex-wrap">
+        <div className="hidden px-5 py-2.5 border-t border-gray-100 dark:border-gray-800 flex-shrink-0 items-center gap-2 text-[12px] text-gray-400 dark:text-gray-500 flex-wrap sm:flex">
           <Info className="w-3.5 h-3.5 flex-shrink-0" />
           <span>Version {document.versionCount} · Modified {new Date(document.dateModified).toLocaleString()}{document.folderId ? " · Filed in a folder" : " · At repository root"}</span>
           <Activity className="w-3.5 h-3.5 ml-2 flex-shrink-0" />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import { Search, Filter, RotateCcw, Clock, CheckCircle, XCircle, ShieldAlert } from "lucide-react"
+import { Search, Clock, CheckCircle, XCircle, ShieldAlert, CalendarDays, Download, ChevronRight } from "lucide-react"
 import { listMyActivity, type AuditEntry } from "@/services/admin"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Card, CardContent } from "@/components/ui/Card"
@@ -36,9 +36,33 @@ function formatTimestamp(iso: string): string {
 
 function actionLabel(action: string): string {
   return action
-    .split(".")
+    .replace(/[._]+/g, " ")
+    .split(" ")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ")
+}
+
+interface ActivityTab {
+  id: "all" | "security" | "authentication" | "access" | "system" | "errors"
+  label: string
+  category?: string
+  result?: string
+}
+
+const ACTIVITY_TABS: readonly ActivityTab[] = [
+  { id: "all", label: "All" },
+  { id: "security", label: "Security", category: "SECURITY" },
+  { id: "authentication", label: "Authentication", category: "AUTHENTICATION" },
+  { id: "access", label: "Access", category: "ACCESS_CONTROL" },
+  { id: "system", label: "System", category: "SYSTEM" },
+  { id: "errors", label: "Errors", result: "FAILED" },
+]
+
+function getDateRangeStart(days: string): string | undefined {
+  if (days === "all") return undefined
+  const date = new Date()
+  date.setDate(date.getDate() - Number(days))
+  return date.toISOString()
 }
 
 export default function MyActivity() {
@@ -48,9 +72,10 @@ export default function MyActivity() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [q, setQ] = useState("")
-  const [category, setCategory] = useState("")
-  const [result, setResult] = useState("")
+  const [activeTab, setActiveTab] = useState<ActivityTab["id"]>("all")
+  const [dateRange, setDateRange] = useState("30")
   const [detailId, setDetailId] = useState<string | null>(null)
+  const selectedTab = ACTIVITY_TABS.find((tab) => tab.id === activeTab) ?? ACTIVITY_TABS[0]
 
   const fetch = useCallback(
     async (p: number) => {
@@ -60,8 +85,9 @@ export default function MyActivity() {
           page: p,
           pageSize: 20,
           q: q || undefined,
-          category: category || undefined,
-          result: result || undefined,
+          category: selectedTab.category,
+          result: selectedTab.result,
+          from: getDateRangeStart(dateRange),
         })
         setEntries(res.items)
         setTotalPages(res.meta.totalPages)
@@ -72,7 +98,7 @@ export default function MyActivity() {
         setLoading(false)
       }
     },
-    [q, category, result],
+    [q, dateRange, selectedTab],
   )
 
   useEffect(() => {
@@ -84,61 +110,85 @@ export default function MyActivity() {
     fetch(1)
   }
 
-  const handleReset = () => {
-    setQ("")
-    setCategory("")
-    setResult("")
+  const selectTab = (tab: ActivityTab["id"]) => {
+    setActiveTab(tab)
     setPage(1)
   }
 
+  const handleExport = () => {
+    const escape = (value: string | null | undefined) => `"${(value ?? "").replace(/"/g, '""')}"`
+    const rows = entries.map((entry) => [
+      formatTimestamp(entry.timestamp),
+      actionLabel(entry.action),
+      entry.category,
+      entry.result,
+      entry.targetName,
+      entry.ipAddress,
+      entry.description,
+    ].map(escape).join(","))
+    const csv = ["Timestamp,Action,Category,Result,Target,IP Address,Description", ...rows].join("\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "my-activity.csv"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="content-padding section-stack">
       <PageHeader
         title="My Activity"
         description={`Your recent activity across URS-DMS${total > 0 ? ` · ${total} entries` : ""}`}
+        actions={
+          <div className="flex items-center gap-2">
+            <Select value={dateRange} onValueChange={(value) => { setDateRange(value); setPage(1) }}>
+              <SelectTrigger className="h-9 w-[132px] rounded-lg px-3 text-xs">
+                <CalendarDays className="mr-1.5 size-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Past 7 Days</SelectItem>
+                <SelectItem value="30">Past 30 Days</SelectItem>
+                <SelectItem value="90">Past 90 Days</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={handleExport} className="h-9 rounded-lg px-3 text-xs" disabled={entries.length === 0}>
+              <Download className="mr-1.5 size-3.5" />
+              Export CSV
+            </Button>
+          </div>
+        }
       />
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-4 dark:border-slate-800">
+        {ACTIVITY_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => selectTab(tab.id)}
+            className={cn(
+              "h-8 rounded-full px-4 text-xs font-medium whitespace-nowrap transition-colors",
+              activeTab === tab.id
+                ? "bg-primary text-white shadow-soft shadow-primary/20"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mb-4">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
           <Input
-            placeholder="Search activity..."
-            className="pl-9 h-9 text-[13px]"
+            placeholder="Search activity, IP address, or event..."
+            className="h-9 border-slate-200 bg-white pl-8 text-sm shadow-none placeholder:text-slate-400 hover:border-slate-300 focus:bg-white dark:bg-slate-900"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           />
-        </div>
-        <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1) }}>
-          <SelectTrigger className="w-[160px] h-9 text-[13px]">
-            <Filter className="w-3.5 h-3.5 mr-2" />
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            <SelectItem value="AUTHENTICATION">Authentication</SelectItem>
-            <SelectItem value="SUBMISSION">Submission</SelectItem>
-            <SelectItem value="REQUEST">Request</SelectItem>
-            <SelectItem value="SECURITY">Security</SelectItem>
-            <SelectItem value="ACCESS_CONTROL">Access Control</SelectItem>
-            <SelectItem value="REPOSITORY">Repository</SelectItem>
-            <SelectItem value="SYSTEM">System</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={result} onValueChange={(v) => { setResult(v); setPage(1) }}>
-          <SelectTrigger className="w-[140px] h-9 text-[13px]">
-            <SelectValue placeholder="Result" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Results</SelectItem>
-            <SelectItem value="SUCCESS">Success</SelectItem>
-            <SelectItem value="FAILED">Failed</SelectItem>
-            <SelectItem value="DENIED">Denied</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button variant="ghost" size="sm" onClick={handleReset} className="h-9 text-[13px]">
-          <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset
-        </Button>
       </div>
 
       {loading ? (
@@ -151,7 +201,7 @@ export default function MyActivity() {
           <Clock className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-[13px] text-gray-500">No activity found</p>
           <p className="text-[12px] text-gray-400 mt-1">
-            {q || category || result ? "Try adjusting your filters." : "Your actions will appear here as you use URS-DMS."}
+            {q || activeTab !== "all" ? "Try adjusting your filters." : "Your actions will appear here as you use URS-DMS."}
           </p>
         </div>
       ) : (
@@ -161,40 +211,42 @@ export default function MyActivity() {
               <Card
                 key={entry.id}
                 className={cn(
-                  "border-border/70 shadow-soft hover:shadow-lift transition-shadow cursor-pointer",
+                  "cursor-pointer border-slate-200/80 bg-white shadow-xs transition-colors hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700",
                   detailId === entry.id && "ring-2 ring-[#2563EB]",
                 )}
                 onClick={() => setDetailId(detailId === entry.id ? null : entry.id)}
               >
-                <CardContent className="p-4 pt-5">
+                <CardContent className="p-4 sm:px-4 sm:py-3 md:px-4 md:py-3">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex-shrink-0">
                         {RESULT_BADGES[entry.result] && (
-                          <span className={cn("inline-flex items-center justify-center w-8 h-8 rounded-full", RESULT_BADGES[entry.result].color)}>
+                          <span className={cn("inline-flex size-8 items-center justify-center rounded-lg", RESULT_BADGES[entry.result].color)}>
                             {RESULT_BADGES[entry.result].icon}
                           </span>
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-gray-900 truncate">
+                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                           {actionLabel(entry.action)}
                         </p>
-                        <p className="text-[12px] text-gray-500 mt-0.5">
+                        <p className="mt-0.5 truncate text-xs text-slate-400 dark:text-slate-500">
                           {formatTimestamp(entry.timestamp)}
                           {entry.targetName && <span> &middot; {entry.targetName}</span>}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       {entry.category && (
-                        <Badge variant="secondary" className={cn("text-[11px] border", CATEGORY_COLORS[entry.category] ?? "bg-gray-50 text-gray-600")}>
+                        <Badge variant="secondary" className={cn("border px-2 py-0.5 text-[10px] font-medium", CATEGORY_COLORS[entry.category] ?? "bg-gray-50 text-gray-600")}>
                           {entry.category.replace(/_/g, " ")}
                         </Badge>
                       )}
-                      <Badge variant={entry.result === "SUCCESS" ? "success" : entry.result === "FAILED" ? "danger" : "warning"} className="text-[11px]">
-                        {entry.result}
+                      <Badge variant={entry.result === "SUCCESS" ? "success" : entry.result === "FAILED" ? "danger" : "warning"} className="gap-1 px-2 py-0.5 text-[10px] font-medium">
+                        <span className="size-1 rounded-full bg-current" />
+                        {entry.result === "DENIED" ? "Denied" : entry.result}
                       </Badge>
+                      <ChevronRight className={cn("size-4 text-slate-400 transition-transform", detailId === entry.id && "rotate-90")} />
                     </div>
                   </div>
                   {detailId === entry.id && (
@@ -235,15 +287,16 @@ export default function MyActivity() {
           </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2">
-              <p className="text-[12px] text-gray-500">
-                Page {page} of {totalPages}
+            <div className="flex items-center justify-between border-t border-slate-200 pt-2 dark:border-slate-800">
+              <p className="text-xs text-slate-500">
+                Showing {entries.length} of {total} entries
               </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="h-8 text-[12px]" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2 text-xs" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 text-[12px]" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+                <span className="flex size-8 items-center justify-center rounded-md bg-primary text-xs font-medium text-white">{page}</span>
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2 text-xs" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
                   Next
                 </Button>
               </div>

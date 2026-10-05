@@ -1,4 +1,5 @@
 import { API_BASE, apiGet, apiGetPage, apiPost, apiPatch, apiDelete, getAccessToken } from "@/lib/http"
+import { sha256 as sha256Buffer } from "@/lib/sha256"
 import type { Document, DocumentStatus } from "@/types/domain"
 
 interface OnlineDocumentRow {
@@ -27,6 +28,7 @@ interface OnlineDocumentRow {
 interface DownloadResult {
   url: string
   filename: string
+  mimeType?: string
 }
 
 function documentStatus(status: OnlineDocumentRow["status"]): DocumentStatus {
@@ -289,8 +291,7 @@ function inferredMimeType(file: File): string {
 }
 
 async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+  return sha256Buffer(await file.arrayBuffer())
 }
 
 export interface OnlineDocumentUploadInput {
@@ -518,6 +519,38 @@ export async function listRepositoryFolders(options?: {
   if (options?.q) params.set("q", options.q)
   const qs = params.size > 0 ? `?${params.toString()}` : ""
   return apiGet<RepositoryFolderRow[]>(`/folders${qs}`)
+}
+
+export type FolderSharePermission = "VIEWER" | "EDITOR"
+export interface FolderShareRow {
+  id: string
+  recipientType: "USER" | "DEPARTMENT"
+  userId: string | null
+  departmentId: string | null
+  permission: "READ" | "WRITE"
+  user?: { firstName: string; lastName: string; email: string } | null
+  department?: { name: string; code: string } | null
+}
+export interface ShareableUser { id: string; firstName: string; lastName: string; departmentId: string | null }
+export interface SharedFolderRow extends RepositoryFolderRow { permission: "VIEWER" | "EDITOR"; shareId: string }
+
+export async function listFolderShares(folderId: string): Promise<FolderShareRow[]> {
+  return apiGet<FolderShareRow[]>(`/folders/${encodeURIComponent(folderId)}/shares`)
+}
+export async function shareRepositoryFolder(folderId: string, input: { recipientType: "USER" | "DEPARTMENT"; userIds?: string[]; departmentId?: string; permission: FolderSharePermission }): Promise<FolderShareRow[]> {
+  return apiPost<FolderShareRow[]>(`/folders/${encodeURIComponent(folderId)}/shares`, input)
+}
+export async function updateFolderShare(folderId: string, shareId: string, permission: FolderSharePermission): Promise<FolderShareRow> {
+  return apiPatch<FolderShareRow>(`/folders/${encodeURIComponent(folderId)}/shares/${encodeURIComponent(shareId)}`, { permission })
+}
+export async function removeFolderShare(folderId: string, shareId: string): Promise<void> {
+  await apiDelete<{ success: true }>(`/folders/${encodeURIComponent(folderId)}/shares/${encodeURIComponent(shareId)}`)
+}
+export async function listShareableUsers(): Promise<ShareableUser[]> {
+  return apiGet<ShareableUser[]>("/folders/shareable-users")
+}
+export async function listSharedWithMe(): Promise<SharedFolderRow[]> {
+  return apiGet<SharedFolderRow[]>("/folders/shared-with-me")
 }
 
 export async function renameRepositoryFolder(id: string, name: string): Promise<RepositoryFolderRow> {

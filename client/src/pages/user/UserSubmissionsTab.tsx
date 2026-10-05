@@ -17,7 +17,7 @@ export default function UserSubmissionsTab({ navigation, areaSet }: { navigation
   const selectedSet = areaSet === "ISO" ? "ISO" : "AACCUP"
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="content-padding">
       <PageHeader
         title="My Submissions"
         description={`Your ${selectedSet} submitted evidence — statuses update after admin review.`}
