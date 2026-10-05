@@ -2,7 +2,7 @@
 
 Production URL: https://urs-dms.online
 
-Private source backup: https://github.com/RJAlferez/URSQA-DMS-Backup
+Public source backup: https://github.com/RJAlferez/URSQA-DMS-Backup
 
 ## Backup scope
 
