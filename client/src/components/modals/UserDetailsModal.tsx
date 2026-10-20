@@ -33,6 +33,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { User } from "@/types/domain"
 import { listSystemDepartments, listSystemRoles, type SystemDepartment, type SystemRole } from "@/services/admin"
+import { toast } from "@/lib/toast"
 
 interface UserDetailsModalProps {
   open: boolean
@@ -40,7 +41,7 @@ interface UserDetailsModalProps {
   user: User | null
   onResetPassword?: () => void
   onDelete?: () => void
-  onSave?: (userId: string, data: { status: "Active" | "Inactive" | "Suspended"; departmentId?: string; roleId?: string }) => void
+  onSave?: (userId: string, data: { status: "Active" | "Inactive" | "Suspended"; departmentId?: string | null; roleId?: string }) => void | Promise<void>
 }
 
 const roleBadgeVariant: Record<string, "default" | "secondary" | "success" | "warning" | "danger"> = {
@@ -67,11 +68,12 @@ export function UserDetailsModal({
   const [selectedDepartment, setSelectedDepartment] = useState(user?.departmentId ?? "")
   const [selectedRole, setSelectedRole] = useState("")
   const [loadingOptions, setLoadingOptions] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open || !user) return
     setIsActive(user.status === "Active")
-    setSelectedDepartment(user.departmentId ?? "")
+    setSelectedDepartment(user.departmentId ?? "unassigned")
     setSelectedRole("")
     setLoadingOptions(true)
     Promise.all([
@@ -82,23 +84,33 @@ export function UserDetailsModal({
         setDepartments(deptPage.items.filter((d) => !d.deletedAt))
         setRoles(rolePage.items.filter((r) => !r.deletedAt))
       })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Failed to load department and role options"))
       .finally(() => setLoadingOptions(false))
   }, [open, user])
 
-  const handleSave = () => {
-    if (!user) return
-    onSave?.(user.id, {
-      status: isActive ? "Active" : "Inactive",
-      ...(selectedDepartment ? { departmentId: selectedDepartment } : {}),
-      ...(selectedRole ? { roleId: selectedRole } : {}),
-    })
-    onOpenChange(false)
+  const handleSave = async () => {
+    if (!user || !onSave || saving) return
+    setSaving(true)
+    try {
+      await onSave(user.id, {
+        status: isActive === (user.status === "Active") ? user.status : isActive ? "Active" : "Inactive",
+        ...(selectedDepartment !== (user.departmentId ?? "unassigned")
+          ? { departmentId: selectedDepartment === "unassigned" ? null : selectedDepartment } : {}),
+        ...(selectedRole ? { roleId: selectedRole } : {}),
+      })
+      toast.success("User changes saved.")
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save user changes")
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!user) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!saving) onOpenChange(nextOpen) }}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader className="pb-3">
           <DialogTitle className="text-lg">User Details</DialogTitle>
@@ -169,6 +181,7 @@ export function UserDetailsModal({
                       {loadingOptions ? <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" /> : <SelectValue placeholder="Select department..." />}
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
                       {departments.map((d) => (
                         <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                       ))}
@@ -292,15 +305,17 @@ export function UserDetailsModal({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
+            disabled={saving}
             className="h-10 px-5"
           >
             Cancel
           </Button>
           <Button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
+            disabled={saving || loadingOptions}
             className="h-10 px-5 shadow-soft"
           >
-            Save Changes
+            {saving ? "Saving..." : "Save Changes"}
           </Button>
         </DialogFooter>
       </DialogContent>

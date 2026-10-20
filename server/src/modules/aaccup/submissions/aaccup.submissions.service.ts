@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
-import { notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
+import { acknowledgeEntityNotifications, notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/utils/errors";
 import { streamZipArchive } from "@/lib/zipStream";
 import { buildExportPlan } from "@/modules/aaccup/submissions/aaccup.export-plan";
@@ -554,6 +554,12 @@ export async function createSubmission(
       actor,
       tx,
     });
+    if (input.taskId) {
+      await acknowledgeEntityNotifications("aaccup_task", [input.taskId], actor, tx);
+    }
+    if (previous) {
+      await acknowledgeEntityNotifications("aaccup_submission", [previous.id], actor, tx);
+    }
     return created;
   });
 
@@ -820,6 +826,7 @@ export async function reviewSubmission(
     if (evaluation) {
       await recordWorkflowAction(tx, evaluation, actor, input.remarks ?? undefined);
     }
+    await acknowledgeEntityNotifications("aaccup_submission", [id], actor, tx);
     return row;
   });
 

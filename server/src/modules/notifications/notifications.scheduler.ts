@@ -10,6 +10,14 @@ function digestWindow(frequency: "DAILY" | "WEEKLY" | "MONTHLY"): number {
   return 24 * 60 * 60 * 1000;
 }
 
+function formatDeadline(date: Date, timezone: string): string {
+  try {
+    return date.toLocaleString("en-PH", { timeZone: timezone });
+  } catch {
+    return date.toLocaleString("en-PH", { timeZone: "Asia/Manila" });
+  }
+}
+
 export async function runNotificationSchedulePass(): Promise<void> {
   const now = new Date();
   const preferences = await prisma.notificationPreference.findMany({
@@ -39,28 +47,69 @@ export async function runNotificationSchedulePass(): Promise<void> {
     await prisma.notificationPreference.update({ where: { id: preference.id }, data: { lastDigestAt: now } });
   }
 
-  const deadlinePreferences = await prisma.notificationPreference.findMany({
-    where: { emailEnabled: true },
-    select: { userId: true, emailEnabled: true, deadlineHours: true, user: { select: { email: true } } },
+  // Missing preference rows use the same defaults as the settings API. In-app
+  // reminders must also work when email is disabled or the app missed a tick.
+  const recipients = await prisma.user.findMany({
+    where: { status: "ACTIVE", deletedAt: null },
+    select: { id: true, departmentId: true, notificationPreference: { select: { deadlineHours: true, emailEnabled: true, timezone: true } } },
   });
-  for (const preference of deadlinePreferences) {
-    const from = new Date(now.getTime() + preference.deadlineHours * 60 * 60 * 1000 - TICK_MS);
-    const to = new Date(now.getTime() + preference.deadlineHours * 60 * 60 * 1000 + TICK_MS);
+  for (const recipient of recipients) {
+    const preference = recipient.notificationPreference;
+    const to = new Date(now.getTime() + (preference?.deadlineHours ?? 24) * 60 * 60 * 1000);
     const tasks = await prisma.aaccupTask.findMany({
-      where: { assigneeType: "USER", assigneeId: preference.userId, status: { in: ["OPEN", "IN_PROGRESS"] }, deletedAt: null, dueDate: { gte: from, lte: to } },
-      select: { id: true, title: true, dueDate: true },
+      where: {
+        OR: [
+          { assigneeType: "USER", assigneeId: recipient.id },
+          ...(recipient.departmentId ? [{ assigneeType: "DEPARTMENT" as const, assigneeId: recipient.departmentId }] : []),
+        ],
+        status: { in: ["OPEN", "IN_PROGRESS"] }, deletedAt: null,
+        area: { deletedAt: null },
+        submissions: { none: { submittedBy: recipient.id, deletedAt: null, isCurrent: true, status: { in: ["PENDING", "APPROVED"] } } },
+      },
+      select: { id: true, title: true, dueDate: true, createdAt: true, area: { select: { name: true } } },
     });
     for (const task of tasks) {
-      const alreadySent = await prisma.notification.findFirst({ where: { userId: preference.userId, type: "AACCUP_TASK_DEADLINE", entityId: task.id, createdAt: { gte: new Date(now.getTime() - 26 * 60 * 60 * 1000) } }, select: { id: true } });
+      const due = task.dueDate ? formatDeadline(task.dueDate, preference?.timezone ?? "Asia/Manila") : null;
+      // Recover missed assignment alerts, including users who joined an assigned
+      // department later. Keep read/deleted alerts as history; never recreate them.
+      // Give the task-creation fan-out time to finish before attempting recovery.
+      if (task.createdAt.getTime() <= now.getTime() - 60_000) {
+        const assigned = await prisma.notification.findFirst({
+          where: { userId: recipient.id, type: "AACCUP_TASK_ASSIGNED", entityId: task.id }, select: { id: true },
+        });
+        if (!assigned) {
+          await notifyUser(recipient.id, "AACCUP_TASK_ASSIGNED", {
+            title: "Task assigned",
+            message: `You have a pending task: "${task.title}" (${task.area.name}).${due ? ` Due ${due}.` : " No deadline is set."}`,
+            entity: "aaccup_task", entityId: task.id, actionUrl: `/user/aaccup?tab=tasks&highlight=${task.id}`,
+            forceEmail: preference?.emailEnabled !== false,
+          });
+        }
+      }
+      if (!task.dueDate || task.dueDate > to) continue;
+      const alreadySent = await prisma.notification.findFirst({ where: { userId: recipient.id, type: "AACCUP_TASK_DEADLINE", entityId: task.id, createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } }, select: { id: true } });
       if (alreadySent) continue;
-      await notifyUser(preference.userId, "AACCUP_TASK_DEADLINE", { title: "Task deadline approaching", message: `Task "${task.title}" is due ${task.dueDate?.toLocaleString() ?? "soon"}.`, entity: "aaccup_task", entityId: task.id, actionUrl: "/user/aaccup?tab=tasks" });
-      await sendEmail({ to: preference.user.email, subject: "URS-QA DMS — Task deadline approaching", body: `<p>Your task <strong>${task.title}</strong> is due ${task.dueDate?.toLocaleString() ?? "soon"}.</p>` });
+      const overdue = Boolean(task.dueDate && task.dueDate <= now);
+      await notifyUser(recipient.id, "AACCUP_TASK_DEADLINE", {
+        title: overdue ? "Task overdue" : "Task deadline approaching",
+        message: `Task "${task.title}" (${task.area.name}) ${overdue ? "was due" : "is due"} ${due}. Please submit your work.`,
+        priority: overdue ? "HIGH" : "MEDIUM",
+        entity: "aaccup_task", entityId: task.id, actionUrl: `/user/aaccup?tab=tasks&highlight=${task.id}`,
+        forceEmail: preference?.emailEnabled !== false,
+        metadata: { dueDate: task.dueDate.toISOString(), overdue },
+      });
     }
   }
 }
 
 export function startNotificationScheduler(): NodeJS.Timeout {
-  const timer = setInterval(() => void runNotificationSchedulePass().catch(() => undefined), TICK_MS);
-  void runNotificationSchedulePass().catch(() => undefined);
+  let running = false;
+  const run = () => {
+    if (running) return;
+    running = true;
+    void runNotificationSchedulePass().catch(() => undefined).finally(() => { running = false; });
+  };
+  const timer = setInterval(run, TICK_MS);
+  run();
   return timer;
 }

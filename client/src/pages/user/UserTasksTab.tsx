@@ -4,7 +4,6 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
-  Clock3,
   Flag,
   RefreshCw,
   Upload,
@@ -17,8 +16,12 @@ import { Badge } from "@/components/ui/Badge"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Skeleton } from "@/components/ui/Skeleton"
 import { toast } from "@/lib/toast"
+import { notificationService } from "@/services/notifications"
+import { useAuth } from "@/context/AuthContext"
+import { hasServerPermission } from "@/lib/permissions"
 import {
   listMyOnlineTasks,
+  listOnlineTasks,
   updateOnlineTask,
   unsubmitOnlineSubmission,
   type OnlineAaccupTask,
@@ -27,9 +30,8 @@ import { TaskSubmitDialog } from "@/components/aaccup/TaskSubmitDialog"
 
 // =============================================================================
 // UserTasksTab — "My Tasks" inside the AACCUP group. Shows the tasks
-// assigned to the current user (or their department). Assignees can move a
-// task OPEN → IN_PROGRESS → COMPLETED and submit evidence directly into a
-// task that is linked to a requirement. Shared with the admin group tab.
+// assigned to the current user (or their department). Assigned work is ready
+// for direct upload without a manual Start step. Shared with the admin group tab.
 // =============================================================================
 
 function taskStatusBadge(status: OnlineAaccupTask["status"]) {
@@ -37,7 +39,7 @@ function taskStatusBadge(status: OnlineAaccupTask["status"]) {
     case "COMPLETED": return <Badge variant="success">Completed</Badge>
     case "IN_PROGRESS": return <Badge variant="default">In Progress</Badge>
     case "CANCELLED": return <Badge variant="danger">Cancelled</Badge>
-    default: return <Badge variant="warning">Open</Badge>
+    default: return <Badge variant="default">Ready to submit</Badge>
   }
 }
 
@@ -49,6 +51,9 @@ function formatDate(value: string | null): string {
 }
 
 export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
+  const { user } = useAuth()
+  const userId = user?.id
+  const manager = hasServerPermission(user, "aaccup.manage")
   const [searchParams] = useSearchParams()
   const [tasks, setTasks] = useState<OnlineAaccupTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,25 +61,39 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [submitTask, setSubmitTask] = useState<OnlineAaccupTask | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (background = false) => {
+    if (!userId) return
+    if (!background) setLoading(true)
     setError(null)
     try {
-      setTasks(await listMyOnlineTasks())
+      setTasks(await (manager ? listOnlineTasks() : listMyOnlineTasks()))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load your tasks")
     } finally {
-      setLoading(false)
+      if (!background) setLoading(false)
     }
-  }, [])
+  }, [manager, userId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    const refresh = () => { void load(true) }
+    const poll = setInterval(refresh, 30_000)
+    window.addEventListener("focus", refresh)
+    window.addEventListener("urs:notifications-updated", refresh)
+    return () => {
+      clearInterval(poll)
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("urs:notifications-updated", refresh)
+    }
+  }, [load])
 
-  const handleStatusChange = async (task: OnlineAaccupTask, status: "IN_PROGRESS" | "COMPLETED") => {
+  const handleComplete = async (task: OnlineAaccupTask) => {
     setUpdatingId(task.id)
     try {
-      await updateOnlineTask(task.id, { status })
-      toast.success(status === "COMPLETED" ? "Task marked as completed" : "Task started")
+      await updateOnlineTask(task.id, { status: "COMPLETED" })
+      toast.success("Task marked as completed")
+      void notificationService.refreshUnread()
+      window.dispatchEvent(new Event("urs:notifications-updated"))
       await load()
     } catch (changeError) {
       toast.error(changeError instanceof Error ? changeError.message : "Failed to update task")
@@ -104,6 +123,7 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
   const taskFilter = searchParams.get("taskFilter")
   const highlightTaskId = searchParams.get("highlight")
   const visibleTasks = tasks.filter((task) => {
+    if (task.id === highlightTaskId) return true
     if (taskFilter === "completed") return task.status === "COMPLETED"
     if (taskFilter === "overdue") return task.status !== "COMPLETED" && task.status !== "CANCELLED" && Boolean(task.dueDate) && new Date(task.dueDate!).getTime() < Date.now()
     if (taskFilter === "due-soon") {
@@ -114,15 +134,15 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
   })
 
   useEffect(() => {
-    if (!highlightTaskId) return
+    if (!highlightTaskId || loading) return
     document.getElementById(`task-${highlightTaskId}`)?.scrollIntoView({ block: "center" })
-  }, [highlightTaskId, visibleTasks.length])
+  }, [highlightTaskId, visibleTasks.length, loading])
 
   return (
     <div className="content-padding">
       <PageHeader
-        title="My Tasks"
-        description="Tasks assigned to you or your department — submit evidence and track progress."
+        title={manager ? "Tasks" : "My Tasks"}
+        description={manager ? "Monitor tasks assigned across users and departments." : "Tasks assigned to you or your department — submit evidence and track progress."}
         actions={
           <Button variant="outline" onClick={() => void load()}>
             <RefreshCw className="mr-2 h-4 w-4" />
@@ -163,7 +183,8 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
             const canChange = actionable(task)
             const submission = task.mySubmission
             const hasSubmittedWork = Boolean(submission && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(submission.status))
-            const canUnsubmit = hasSubmittedWork || task.status === "COMPLETED"
+            const assignedToMe = task.assigneeType === "USER" ? task.assigneeId === userId : Boolean(user?.departmentId && task.assigneeId === user.departmentId)
+            const canUnsubmit = hasSubmittedWork || (task.status === "COMPLETED" && assignedToMe)
             return (
               <Card id={`task-${task.id}`} key={task.id} className={task.id === highlightTaskId ? "border-blue-400 shadow-md ring-2 ring-blue-100" : "border-slate-200/70 shadow-soft"}>
                 <CardContent className="p-5">
@@ -190,6 +211,7 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                         <p className="mt-1 text-[12px] text-slate-500">
                           {task.areaName} · {task.areaSet} · Due {formatDate(task.dueDate)}
                         </p>
+                        {manager && <p className="mt-1 text-[12px] text-slate-500">Assigned to: {task.assigneeLabel ?? "Unassigned"}</p>}
                         {task.description && (
                           <p className="mt-1.5 text-[12px] text-slate-600 line-clamp-2">{task.description}</p>
                         )}
@@ -209,38 +231,27 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                       {canUnsubmit && <Button size="sm" variant="outline" disabled={updatingId === task.id} onClick={() => void handleUnsubmit(task)}>
                         <Undo2 className="mr-1.5 h-3.5 w-3.5" />Unsubmit
                       </Button>}
-                      {canChange && task.status === "OPEN" && !hasSubmittedWork && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={updatingId === task.id}
-                          onClick={() => void handleStatusChange(task, "IN_PROGRESS")}
-                        >
-                          <Clock3 className="mr-1.5 h-3.5 w-3.5" />
-                          Start
-                        </Button>
-                      )}
-                      {canChange && task.status === "IN_PROGRESS" && !task.requirementId && (
+                      {canChange && !task.requirementId && !hasSubmittedWork && (
                         <Button
                           size="sm"
                           variant="outline"
                           className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                           disabled={updatingId === task.id}
-                          onClick={() => void handleStatusChange(task, "COMPLETED")}
+                          onClick={() => void handleComplete(task)}
                         >
                           <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                           Mark Complete
                         </Button>
                       )}
-                      {canChange && task.requirementId && !hasSubmittedWork ? (
+                      {canChange && !hasSubmittedWork ? (
                         <Button size="sm" className="shadow-soft" disabled={updatingId === task.id} onClick={() => setSubmitTask(task)}>
                           <Upload className="mr-1.5 h-3.5 w-3.5" />
-                          {submission ? "Resubmit Evidence" : "Submit Evidence"}
+                          {submission ? "Resubmit Evidence" : "Upload Evidence"}
                         </Button>
                       ) : (
                         canChange && !task.requirementId && (
                           <Badge variant="secondary" className="text-[10px]">
-                            {task.requirementTemplateId ? "Complete template requirements" : "No requirement linked"}
+                            {hasSubmittedWork ? "Awaiting review" : "Select a requirement when uploading"}
                           </Badge>
                         )
                       )}

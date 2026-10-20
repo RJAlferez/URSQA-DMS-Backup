@@ -100,6 +100,21 @@ export async function markAllRead(userId: string): Promise<number> {
   return result.count;
 }
 
+/** Resolve only the actor's alerts for work successfully handled in this transaction. */
+export async function markEntitiesRead(
+  userId: string,
+  entity: string,
+  entityIds: string[],
+  tx: Prisma.TransactionClient,
+): Promise<number> {
+  if (!entityIds.length) return 0;
+  const result = await tx.notification.updateMany({
+    where: { userId, entity, entityId: { in: entityIds }, readAt: null, deletedAt: null },
+    data: { readAt: new Date() },
+  });
+  return result.count;
+}
+
 export async function softDelete(userId: string, id: string): Promise<number> {
   const result = await prisma.notification.updateMany({
     where: { id, userId, deletedAt: null },
@@ -119,6 +134,7 @@ export async function createForUser(
     entityId?: string | null;
     actionUrl?: string | null;
     metadata?: Record<string, unknown>;
+    isRead?: boolean;
   },
 ): Promise<NotificationRow> {
   return prisma.notification.create({
@@ -132,6 +148,7 @@ export async function createForUser(
       entityId: data.entityId ?? null,
       actionUrl: data.actionUrl ?? null,
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      readAt: data.isRead ? new Date() : null,
     },
     select: inboxSelect,
   });
@@ -148,6 +165,7 @@ export async function createManyForUsers(
     entityId?: string | null;
     actionUrl?: string | null;
     metadata?: Record<string, unknown>;
+    isRead?: boolean;
   },
 ): Promise<number> {
   if (userIds.length === 0) return 0;
@@ -162,6 +180,7 @@ export async function createManyForUsers(
       entityId: data.entityId ?? null,
       actionUrl: data.actionUrl ?? null,
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      readAt: data.isRead ? new Date() : null,
     })),
   });
   return result.count;

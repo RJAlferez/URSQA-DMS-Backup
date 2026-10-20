@@ -1348,6 +1348,7 @@ export async function verifyUpload(
   // Rule 19: upload-completed notification (backend-authoritative, single write).
   await safeNotify(actor.id, "DOCUMENT_UPLOADED", {
     forceEmail: true,
+    isRead: true,
     title: "Upload completed",
     message: `"${doc.title}" was uploaded successfully.`,
     entity: "document",

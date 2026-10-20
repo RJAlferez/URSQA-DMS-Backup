@@ -46,7 +46,6 @@ interface UserSidebarProps {
   onNavigate?: (page: string) => void
   onLogout?: () => void
   unreadNotifications?: number
-  attention?: { returned: number; tasks: number; requests: number; documents: number }
   className?: string
 }
 
@@ -57,7 +56,6 @@ export function UserSidebar({
   onNavigate,
   onLogout,
   unreadNotifications = 0,
-  attention,
   className,
 }: UserSidebarProps) {
   const { logout, user } = useAuth()
@@ -120,7 +118,6 @@ export function UserSidebar({
               const Icon = item.icon
               const isActive = activeNavPage === item.id
               if (item.id === "aaccup") {
-                const badgeCount = attention ? attention.returned + attention.tasks : 0
                 return (
                   <div key={item.id}>
                     <button
@@ -135,7 +132,6 @@ export function UserSidebar({
                     >
                       <Icon className={cn("w-[18px] h-[18px] flex-shrink-0", accreditationActive ? "text-white" : "text-slate-400")} />
                        {!collapsed && <span className="flex-1 text-left">Accreditation</span>}
-                      {badgeCount > 0 && !collapsed && <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{badgeCount > 99 ? "99+" : badgeCount}</span>}
                       {!collapsed && <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", !aaccupOpen && "-rotate-90")} />}
                     </button>
                     {!collapsed && aaccupOpen && (
@@ -167,11 +163,7 @@ export function UserSidebar({
                   </div>
                 )
               }
-              let badgeCount = 0
-              if (item.id === "notifications") badgeCount = unreadNotifications
-              else if (item.id === "aaccup" && attention) badgeCount = attention.returned + attention.tasks
-              else if (item.id === "requests" && attention) badgeCount = attention.requests
-              else if (item.id === "documents" && attention) badgeCount = attention.documents
+              const badgeCount = item.id === "notifications" ? unreadNotifications : 0
               const showBadge = badgeCount > 0
 
               return (

@@ -80,7 +80,6 @@ import { getUploadsAnalytics, type UploadsAnalytics } from "@/services/analytics
 import { listRequests } from "@/services/requests"
 import type { DocumentRequest } from "@/types/domain"
 import { notificationService } from "@/services/notifications"
-import { subscribeUserAttention, type UserAttention } from "@/lib/userAttention"
 import { listOnlineDocuments, openOnlineDocument } from "@/services/documents"
 import AdminDashboard from "@/pages/AdminDashboard"
 import AdminAreaDetailPage from "@/pages/AdminAreaDetailPage"
@@ -926,18 +925,12 @@ function UserAppContent() {
   const [activePage, setActivePage] = useState("dashboard")
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
-  const [attention, setAttention] = useState<UserAttention>({
-    returnedSubmissions: 0, dueSoonTasks: 0, overdueTasks: 0, openTasks: 0,
-    pendingRequests: 0, approvedRequests: 0, fulfilledRequests: 0, refusedRequests: 0,
-    allSubmissions: [], returnedSubmissionsList: [], overdueTasksList: [], dueSoonTasksList: [], recentRequestUpdates: [],
-    loading: true,
-  })
 
   useEffect(() => {
     if (!user) return
+    setUnreadCount(0)
     const unsub = notificationService.subscribeUnread(setUnreadCount)
-    const unsubAttn = subscribeUserAttention(setAttention, user.id)
-    return () => { unsub(); unsubAttn() }
+    return unsub
   }, [user])
 
   useEffect(() => {
@@ -1036,7 +1029,6 @@ function UserAppContent() {
         onNavigate={handleNavigate}
         onLogout={handleLogout}
         unreadNotifications={unreadCount}
-        attention={{ returned: attention.returnedSubmissions, tasks: attention.dueSoonTasks + attention.overdueTasks, requests: attention.pendingRequests + attention.fulfilledRequests, documents: attention.fulfilledRequests }}
         className="hidden lg:flex"
       />
 
@@ -1085,7 +1077,7 @@ function UserAppContent() {
         </main>
       </div>
     </div>
-     <MobileBottomBar isUser activePage={activePage} onNavigate={handleNavigate} badges={{ documents: attention.fulfilledRequests, aaccup: attention.returnedSubmissions + attention.dueSoonTasks + attention.overdueTasks, requests: attention.pendingRequests + attention.fulfilledRequests, notifications: unreadCount }} />
+     <MobileBottomBar isUser activePage={activePage} onNavigate={handleNavigate} badges={{ notifications: unreadCount }} />
      <NavigationAssistant />
     </>
   )

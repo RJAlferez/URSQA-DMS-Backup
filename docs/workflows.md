@@ -26,6 +26,10 @@ Document requests expose creation plus management actions under `request.create`
 
 ## Unsubmit and resubmit task evidence
 
+- Tasks without a fixed evidence requirement can upload directly by selecting
+  an active requirement from their own area. Submissions retain their task ID
+  and use the existing validation and approval workflow. Users cannot mark
+  submitted evidence complete themselves while review is pending.
 - My Tasks shows each caller's latest evidence and review status. Unsubmit is
   available for pending, approved, and returned work owned by that caller.
 - Unsubmit retains evidence and review history, removes it from current approved
@@ -36,6 +40,34 @@ Document requests expose creation plus management actions under `request.create`
 - Reviewers receive a bell notification and one immediate queued email for each
   unsubmission or resubmission, including names and task/accreditation context.
   These workflow alerts bypass digest delivery schedules.
+
+## Task alerts and unread counts
+
+- Newly assigned tasks start in progress and accept evidence directly from My
+  Tasks. Existing open tasks also accept uploads without a Start step.
+- Assignment alerts link to the exact task. The inbox and unread badge refresh
+  every 30 seconds, on focus/reconnect, and after successful actions.
+- Only Notifications has an unread navigation badge. Notifications opens to All;
+  marking an alert read reduces the badge without removing its history. Category
+  tabs include read alerts; Unread is an optional filter.
+- A separate live pending-task section stays visible after alerts are read.
+  Regular users see their own/department tasks; managers see active tasks across
+  the organization, and the admin Tasks tab supports the same complete view.
+- Clicking an alert marks it read and opens its related item. A successful task
+  submission resolves the caller's task alerts and previous submission alert in
+  the same transaction. Failed uploads leave these alerts unread. Completing
+  work without evidence and reviewing a submission resolve the acting user's
+  related alerts. Deadline reminders skip current pending/approved work.
+- Reminder processing includes active users without saved preferences (24-hour
+  lead time, email enabled by default). Due-soon and overdue tasks generate at
+  most one deadline alert per 24 hours until handled, even if earlier alerts were
+  read. In-app reminders continue when email is disabled. Missed schedule windows
+  are recovered while the app is running; no reminders are sent while it is off.
+- The scheduler recovers missing assignment alerts for pending tasks, including
+  newly joined department members. Existing read/deleted assignment alerts are
+  not recreated. Assignment alerts include area and deadline context.
+- Successful action confirmations still appear in history and email, already
+  read, so they do not replace a resolved task with another unread item.
 
 ## Action receipts
 

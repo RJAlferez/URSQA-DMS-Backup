@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react"
-import { Search, RefreshCw, Users, KeyRound, Loader2 } from "lucide-react"
+import { Search, RefreshCw, Users, KeyRound, Loader2, Building2 } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Card, CardContent } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
@@ -38,7 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog"
 import { listSystemUsers, type RootSystemUser } from "@/services/root"
-import { resetUserPassword } from "@/services/admin"
+import { resetUserPassword, listSystemDepartments, updateSystemUser, type SystemDepartment } from "@/services/admin"
 import { toast } from "@/lib/toast"
 
 const PAGE_SIZE = 15
@@ -63,6 +63,40 @@ export default function RootUsers() {
   const [newPassword, setNewPassword] = useState("")
   const [mustChange, setMustChange] = useState(true)
   const [resetting, setResetting] = useState(false)
+  const [departmentTarget, setDepartmentTarget] = useState<RootSystemUser | null>(null)
+  const [departments, setDepartments] = useState<SystemDepartment[]>([])
+  const [departmentId, setDepartmentId] = useState("unassigned")
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
+  const [departmentError, setDepartmentError] = useState<string | null>(null)
+  const [savingDepartment, setSavingDepartment] = useState(false)
+
+  useEffect(() => {
+    if (!departmentTarget) return
+    let active = true
+    setDepartmentId(departmentTarget.departmentId ?? "unassigned")
+    setDepartments([])
+    setDepartmentError(null)
+    setLoadingDepartments(true)
+    void (async () => {
+      try {
+        const items: SystemDepartment[] = []
+        let currentPage = 1
+        let pages = 1
+        do {
+          const result = await listSystemDepartments({ page: currentPage, pageSize: 200 })
+          items.push(...result.items.filter((item) => !item.deletedAt))
+          pages = result.meta.totalPages
+          currentPage++
+        } while (active && currentPage <= pages)
+        if (active) setDepartments(items)
+      } catch (err) {
+        if (active) setDepartmentError(err instanceof Error ? err.message : "Failed to load departments")
+      } finally {
+        if (active) setLoadingDepartments(false)
+      }
+    })()
+    return () => { active = false }
+  }, [departmentTarget])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -87,6 +121,21 @@ export default function RootUsers() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const handleSaveDepartment = async () => {
+    if (!departmentTarget || savingDepartment) return
+    setSavingDepartment(true)
+    try {
+      await updateSystemUser(departmentTarget.id, { departmentId: departmentId === "unassigned" ? null : departmentId })
+      toast.success("User department updated.")
+      setDepartmentTarget(null)
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update department")
+    } finally {
+      setSavingDepartment(false)
+    }
+  }
 
   const handleResetPassword = async () => {
     if (!resetTarget || !newPassword || newPassword.length < 8) return
@@ -162,10 +211,11 @@ export default function RootUsers() {
                   <TableHead>User</TableHead>
                   <TableHead>Employee ID</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Login</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-[90px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -179,6 +229,7 @@ export default function RootUsers() {
                     <TableCell>
                       <Badge variant={user.roleName === "ROOT" ? "danger" : "secondary"}>{user.roleName}</Badge>
                     </TableCell>
+                    <TableCell className="text-[13px] text-gray-600">{user.departmentName ?? "Unassigned"}</TableCell>
                     <TableCell>
                       <Badge variant={statusBadge(user.status)}>{user.status}</Badge>
                     </TableCell>
@@ -189,6 +240,17 @@ export default function RootUsers() {
                       {new Date(user.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-gray-400 hover:text-primary-600"
+                        title={user.roleName === "ROOT" ? "Root accounts are protected" : "Change department"}
+                        aria-label={`Change department for ${user.firstName} ${user.lastName}`}
+                        disabled={user.roleName === "ROOT" || Boolean(user.deletedAt)}
+                        onClick={() => setDepartmentTarget(user)}
+                      >
+                        <Building2 className="w-4 h-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -223,6 +285,40 @@ export default function RootUsers() {
           <span className="text-[12px] text-gray-500">page {page} of {totalPages}</span>
         </div>
       </Card>
+
+      <Dialog open={departmentTarget !== null} onOpenChange={(open) => { if (!open && !savingDepartment) setDepartmentTarget(null) }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Change Department</DialogTitle>
+            <DialogDescription>
+              Update the department for {departmentTarget?.firstName} {departmentTarget?.lastName}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="root-user-department">Department</Label>
+            <Select value={departmentId} onValueChange={setDepartmentId} disabled={loadingDepartments || savingDepartment || Boolean(departmentError)}>
+              <SelectTrigger id="root-user-department">
+                <SelectValue placeholder="Select department" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {departmentTarget?.departmentId && !departments.some((item) => item.id === departmentTarget.departmentId) && (
+                  <SelectItem value={departmentTarget.departmentId} disabled>{departmentTarget.departmentName ?? "Current department"}</SelectItem>
+                )}
+                {departments.map((department) => <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {loadingDepartments && <p className="text-sm text-gray-500">Loading departments...</p>}
+            {departmentError && <p role="alert" className="text-sm text-red-600">{departmentError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={savingDepartment} onClick={() => setDepartmentTarget(null)}>Cancel</Button>
+            <Button disabled={savingDepartment || loadingDepartments || Boolean(departmentError) || departmentId === (departmentTarget?.departmentId ?? "unassigned")} onClick={() => void handleSaveDepartment()}>
+              {savingDepartment ? "Saving..." : "Save Department"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={resetTarget !== null} onOpenChange={(open) => { if (!open) setResetTarget(null) }}>
         <DialogContent className="sm:max-w-[400px]">

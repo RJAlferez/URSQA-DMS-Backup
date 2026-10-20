@@ -354,7 +354,7 @@ export type OnlineTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT"
 export type OnlineTaskStatus = "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
 
 export interface OnlineAaccupTask {
-  mySubmission?: { id: string; status: string; documentTitle: string; submittedAt: string } | null
+  mySubmission?: { id: string; status: string; documentTitle: string; submittedAt: string; requirementId?: string } | null
   id: string
   areaId: string
   areaCode: string
@@ -461,6 +461,7 @@ function inferredMimeType(file: File): string {
     ppt: "application/vnd.ms-powerpoint",
     pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     png: "image/png",
+    mp4: "video/mp4",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     csv: "text/csv",

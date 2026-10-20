@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ForbiddenError, NotFoundError } from "@/utils/errors";
 import { sendEmail } from "@/modules/email/email.service";
 import { AUDIT_ACTIONS } from "@/config/constants";
-import { writeAudit } from "@/modules/audit/audit.service";
+import { writeAudit, writeAuditInTransaction } from "@/modules/audit/audit.service";
 import {
   NOTIFICATION_EVENTS,
   type NotificationEventSpec,
@@ -97,6 +97,26 @@ export async function listNotifications(
 export async function getUnreadCount(actor: Actor): Promise<UnreadCountResult> {
   assertPermission(actor, "notification.read");
   return { unread: await repo.countUnread(actor.id) };
+}
+
+/** Internal business-operation hook; the caller supplies its authorized transaction. */
+export async function acknowledgeEntityNotifications(
+  entity: string,
+  entityIds: string[],
+  actor: Actor,
+  tx: Prisma.TransactionClient,
+): Promise<void> {
+  const updated = await repo.markEntitiesRead(actor.id, entity, entityIds, tx);
+  if (updated > 0) {
+    await writeAuditInTransaction(tx, {
+      action: AUDIT_ACTIONS.NOTIFICATION_MARKED_READ,
+      userId: actor.id,
+      entity: "notification",
+      newValue: { count: updated, relatedEntity: entity, relatedIds: entityIds, reason: "work_handled" },
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+  }
 }
 
 export async function markNotificationRead(id: string, actor: Actor): Promise<NotificationListItem> {
@@ -331,6 +351,7 @@ export async function notifyUser(
     entityId: input.entityId,
     actionUrl: input.actionUrl,
     metadata: input.metadata,
+    isRead: input.isRead,
   });
   if (payload.email && (input.forceEmail || (user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE"))) {
     await sendEmail({ to: user.email, ...payload.email }).catch(() => undefined);
@@ -361,6 +382,7 @@ export async function notifyUsers(
     entityId: input.entityId,
     actionUrl: input.actionUrl,
     metadata: input.metadata,
+    isRead: input.isRead,
   });
   if (payload.email) {
     await Promise.allSettled(
@@ -390,6 +412,7 @@ export async function reportActionResult(input: ActionResultBody, actor: Actor):
     priority: input.outcome === "error" ? "HIGH" : "LOW",
     actionUrl: input.actionUrl,
     forceEmail: true,
+    isRead: input.outcome === "success",
     metadata: { eventId: input.eventId, outcome: input.outcome, source: "client_action" },
   });
 }

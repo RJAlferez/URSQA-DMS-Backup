@@ -43,7 +43,7 @@ export function resolveNotificationRoute(notif: Notification, preferredPortal?: 
     }
     return {
       ...base,
-      portal: linkRoute?.portal ?? preferredPortal ?? base.portal,
+      portal: preferredPortal ?? linkRoute?.portal ?? base.portal,
       tab: linkParams.get("tab") ?? base.tab,
       query: Object.keys(query).length > 0 ? query : undefined,
     }

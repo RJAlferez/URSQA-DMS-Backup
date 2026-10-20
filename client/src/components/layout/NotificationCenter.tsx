@@ -5,6 +5,7 @@ import { Bell, Check, CheckCheck, X } from "lucide-react"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
 import { cn } from "@/lib/utils"
+import { toast } from "@/lib/toast"
 import { notificationService } from "@/services/notifications"
 import { resolveNotificationRoute, buildNotificationUrl } from "@/lib/notificationNav"
 import type { Notification } from "@/types/domain"
@@ -83,14 +84,22 @@ export function NotificationCenter() {
   const getNotificationsByGroup = (group: string) =>
     notifications.filter((n) => getMeta(n).label === group)
 
-  const markRead = (id: string) => {
-    notificationService.markRead(id)
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+  const markRead = async (id: string) => {
+    try {
+      await notificationService.markRead(id)
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to mark notification as read")
+    }
   }
 
-  const markAllRead = () => {
-    notificationService.markAllReadForUser()
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+  const markAllRead = async () => {
+    try {
+      await notificationService.markAllReadForUser()
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to mark notifications as read")
+    }
   }
 
   const handleViewNotification = (notif: Notification) => {

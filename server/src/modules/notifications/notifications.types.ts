@@ -59,6 +59,8 @@ export interface NotificationPreferenceView {
 
 /** Programmatic emit surface for other modules (module-agnostic). */
 export interface NotifyInput {
+  /** Successful action confirmations belong in history without adding unread work. */
+  isRead?: boolean;
   /** Critical workflow alerts and explicitly requested action receipts bypass digests. */
   forceEmail?: boolean;
   title?: string;

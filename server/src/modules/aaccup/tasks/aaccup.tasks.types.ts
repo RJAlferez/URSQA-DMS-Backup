@@ -34,6 +34,7 @@ export interface AaccupTaskListItem {
     status: string;
     documentTitle: string;
     submittedAt: Date;
+    requirementId?: string;
   } | null;
   createdAt: Date;
   updatedAt: Date;

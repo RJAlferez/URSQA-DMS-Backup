@@ -1,5 +1,5 @@
 import type { Notification, NotificationType } from "@/types/domain"
-import { apiDelete, apiGet, apiGetPage, apiPatch, apiPost } from "@/lib/http"
+import { apiDelete, apiGet, apiGetPage, apiPatch, apiPost, getAccessToken } from "@/lib/http"
 
 export interface ServerNotification {
   id: string
@@ -88,53 +88,110 @@ function mapServerType(serverType: string): NotificationType {
 type Listener = (notifications: Notification[]) => void
 type UnreadCountListener = (count: number) => void
 
+// Used only to discard responses from an account/session that has changed.
+// Server authentication and authorization remain authoritative.
+function notificationSession(): string | null {
+  const token = getAccessToken()
+  if (!token) return null
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { sub: string; sessionId: string }
+    return `${payload.sub}:${payload.sessionId}`
+  } catch { return token }
+}
+
 class NotificationService {
   private listListeners: Set<Listener> = new Set()
   private unreadListeners: Set<UnreadCountListener> = new Set()
+  private poll: ReturnType<typeof setInterval> | null = null
+  private listRequest: Promise<Notification[]> | null = null
+  private unreadRequest: Promise<void> | null = null
+  private listSession: string | null = null
+  private unreadSession: string | null = null
+
+  private updatePolling() {
+    if (this.listListeners.size || this.unreadListeners.size) {
+      if (this.poll) return
+      this.poll = setInterval(this.notify, 30_000)
+      window.addEventListener("focus", this.notify)
+      window.addEventListener("online", this.notify)
+      window.addEventListener("urs:notifications-updated", this.notify)
+    } else if (this.poll) {
+      clearInterval(this.poll)
+      this.poll = null
+      window.removeEventListener("focus", this.notify)
+      window.removeEventListener("online", this.notify)
+      window.removeEventListener("urs:notifications-updated", this.notify)
+    }
+  }
 
   subscribe(fn: Listener): () => void {
     this.listListeners.add(fn)
-    this.refresh()
-    return () => this.listListeners.delete(fn)
+    this.updatePolling()
+    void this.refresh()
+    return () => { this.listListeners.delete(fn); this.updatePolling() }
   }
 
   subscribeUnread(fn: UnreadCountListener): () => void {
     this.unreadListeners.add(fn)
-    this.refreshUnread()
-    return () => this.unreadListeners.delete(fn)
+    this.updatePolling()
+    void this.refreshUnread()
+    return () => { this.unreadListeners.delete(fn); this.updatePolling() }
   }
 
-  private notify() {
-    this.refresh()
-    this.refreshUnread()
+  private notify = () => {
+    // A mutation may finish while an older poll is in flight. Refresh after it
+    // settles so its pre-action response cannot leave a stale badge behind.
+    void Promise.allSettled([this.listRequest, this.unreadRequest]).then(() => {
+      if (this.listListeners.size) void this.refresh()
+      if (this.unreadListeners.size) void this.refreshUnread()
+    })
   }
 
   async refresh() {
     try {
-      const page = await apiGetPage<ServerNotification>("/notifications?page=1&pageSize=50")
-      const sorted = page.items.map(toClientNotification).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      const session = notificationSession()
+      const sorted = await this.listForUser()
+      if (session !== notificationSession()) return
       this.listListeners.forEach((l) => l(sorted))
     } catch {
-      this.listListeners.forEach((l) => l([]))
+      // Keep the last confirmed inbox during a temporary connection failure.
     }
   }
 
   async refreshUnread() {
-    try {
-      const data = await apiGet<{ unread: number }>("/notifications/unread-count")
-      this.unreadListeners.forEach((l) => l(data.unread))
-    } catch {
-      this.unreadListeners.forEach((l) => l(0))
-    }
+    const session = notificationSession()
+    if (this.unreadRequest && this.unreadSession === session) return this.unreadRequest
+    this.unreadSession = session
+    const request = apiGet<{ unread: number }>("/notifications/unread-count")
+      .then((data) => {
+        if (session === notificationSession()) this.unreadListeners.forEach((l) => l(data.unread))
+      })
+      .catch(() => { /* Preserve the last confirmed count on a network failure. */ })
+      .finally(() => { if (this.unreadRequest === request) this.unreadRequest = null })
+    this.unreadRequest = request
+    return request
   }
 
   async listForUser(): Promise<Notification[]> {
-    try {
-      const page = await apiGetPage<ServerNotification>("/notifications?page=1&pageSize=50")
-      return page.items.map(toClientNotification).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    } catch {
-      return []
-    }
+    const session = notificationSession()
+    if (this.listRequest && this.listSession === session) return this.listRequest
+    this.listSession = session
+    const request = (async () => {
+      const items: ServerNotification[] = []
+      let page = 1
+      let totalPages: number
+      do {
+        const result = await apiGetPage<ServerNotification>(`/notifications?page=${page}&pageSize=100`)
+        if (session !== notificationSession()) return []
+        items.push(...result.items)
+        totalPages = result.meta.totalPages
+        page++
+      } while (page <= totalPages)
+      return [...new Map(items.map((item) => [item.id, toClientNotification(item)])).values()]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    })().finally(() => { if (this.listRequest === request) this.listRequest = null })
+    this.listRequest = request
+    return request
   }
 
   async listAll(): Promise<Notification[]> {
@@ -151,20 +208,12 @@ class NotificationService {
   }
 
   async markRead(id: string): Promise<void> {
-    try {
-      await apiPatch<ServerNotification>(`/notifications/${id}/read`)
-    } catch {
-      // Ignore races; the server remains the source of truth.
-    }
+    await apiPatch<ServerNotification>(`/notifications/${encodeURIComponent(id)}/read`)
     this.notify()
   }
 
   async markAllReadForUser(): Promise<void> {
-    try {
-      await apiPatch<{ success: true }>("/notifications/read-all")
-    } catch {
-      // Ignore; unread state is refreshed from the server below.
-    }
+    await apiPatch<{ updated: number }>("/notifications/read-all")
     this.notify()
   }
 

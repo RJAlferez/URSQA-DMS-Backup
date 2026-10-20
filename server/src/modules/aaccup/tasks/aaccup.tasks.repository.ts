@@ -145,6 +145,7 @@ export async function create(args: CreateTaskArgs): Promise<AaccupTaskDetail> {
       assigneeId: args.assigneeId,
       assigneeLabel: args.assigneeLabel,
       createdBy: args.createdBy,
+      status: "IN_PROGRESS",
     },
     include: TASK_INCLUDE,
   });
@@ -170,8 +171,8 @@ export interface UpdateTaskArgs {
   };
 }
 
-export async function update(args: UpdateTaskArgs): Promise<AaccupTaskDetail> {
-  const row = await prisma.aaccupTask.update({
+export async function update(args: UpdateTaskArgs, tx: Prisma.TransactionClient = prisma): Promise<AaccupTaskDetail> {
+  const row = await tx.aaccupTask.update({
     where: { id: args.id },
     data: {
       ...(args.data.title !== undefined ? { title: args.data.title } : {}),

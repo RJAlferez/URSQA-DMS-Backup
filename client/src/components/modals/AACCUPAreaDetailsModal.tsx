@@ -248,7 +248,7 @@ export function AACCUPAreaDetailsModal({
   }
 
   const taskStatusLabel: Record<OnlineAaccupTask["status"], string> = {
-    OPEN: "Open",
+    OPEN: "Ready to submit",
     IN_PROGRESS: "In Progress",
     COMPLETED: "Completed",
     CANCELLED: "Cancelled",
@@ -595,18 +595,7 @@ export function AACCUPAreaDetailsModal({
                             {canManageTasks && (
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-1">
-                                  {actionable && task.status === "OPEN" && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 text-[12px]"
-                                      disabled={updatingTaskId === task.id}
-                                      onClick={() => void handleTaskStatusChange(task, "IN_PROGRESS")}
-                                    >
-                                      Start
-                                    </Button>
-                                  )}
-                                  {actionable && task.status === "IN_PROGRESS" && (
+                                  {actionable && !task.requirementId && !["PENDING", "APPROVED", "NEEDS_REVISION"].includes(task.mySubmission?.status ?? "") && (
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -617,13 +606,13 @@ export function AACCUPAreaDetailsModal({
                                       Mark Complete
                                     </Button>
                                   )}
-                                  {actionable && task.requirementId && (
+                                  {actionable && !["PENDING", "APPROVED", "NEEDS_REVISION"].includes(task.mySubmission?.status ?? "") && (
                                     <Button
                                       size="sm"
                                       className="h-8 text-[12px] shadow-soft"
                                       onClick={() => setSubmitTask(task)}
                                     >
-                                      Submit Evidence
+                                      Upload Evidence
                                     </Button>
                                   )}
                                 </div>

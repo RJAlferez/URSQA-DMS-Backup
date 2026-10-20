@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Bell, Check, CheckCheck, Search, FileText, GraduationCap, Inbox, Upload, AlertTriangle, RotateCcw, type LucideIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/Card"
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/Tabs"
 import { cn } from "@/lib/utils"
+import { toast } from "@/lib/toast"
+import { isAdminRole } from "@/lib/permissions"
 import { useAuth } from "@/context/AuthContext"
 import { notificationService } from "@/services/notifications"
+import { PendingTaskReminders } from "@/components/aaccup/PendingTaskReminders"
 import { resolveNotificationRoute, buildNotificationUrl } from "@/lib/notificationNav"
 import type { Notification } from "@/types/domain"
 
@@ -67,28 +70,38 @@ const getTimeAgo = (dateStr: string) => {
 export default function UserNotifications() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get("highlight")
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("all")
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
     if (!user) return
+    let active = true
     setLoading(true)
-    try {
-      const data = await notificationService.listForUser()
-      setNotifs(data)
-    } finally { setLoading(false) }
+    const unsubscribe = notificationService.subscribe((items) => {
+      if (!active) return
+      setNotifs(items)
+      setLoadError(null)
+      setLoading(false)
+    })
+    const unsubscribeUnread = notificationService.subscribeUnread(setUnreadCount)
+    void notificationService.listForUser().catch((err) => {
+      if (active) {
+        setLoadError(err instanceof Error ? err.message : "Unable to load notifications")
+        setLoading(false)
+      }
+    })
+    return () => { active = false; unsubscribe(); unsubscribeUnread() }
   }, [user])
 
   useEffect(() => {
-    const onUpdate = () => { void refresh() }
-    onUpdate()
-    window.addEventListener("urs:notifications-updated", onUpdate)
-    return () => window.removeEventListener("urs:notifications-updated", onUpdate)
-  }, [refresh])
-
-  const unreadCount = notifs.filter((n) => !n.read).length
+    if (!loading && highlightId) document.getElementById(`notification-${highlightId}`)?.scrollIntoView({ block: "center" })
+  }, [highlightId, loading, notifs])
 
   const filteredNotifs = notifs.filter((notif) => {
     const matchesSearch =
@@ -96,12 +109,12 @@ export default function UserNotifications() {
       notif.message.toLowerCase().includes(searchQuery.toLowerCase())
     const entity = notif.entity || ""
     const matchesTab =
-      activeTab === "all" ||
-      (activeTab === "unread" && !notif.read) ||
-      (activeTab === "requests" && entity === "request") ||
-      (activeTab === "documents" && (entity === "document" || notif.type === "upload")) ||
-      (activeTab === "submissions" && entity === "aaccup_submission") ||
-      (activeTab === "tasks" && entity === "aaccup_task")
+      notif.id === highlightId || activeTab === "all" ||
+        (activeTab === "unread" && !notif.read) ||
+        (activeTab === "requests" && entity === "request") ||
+        (activeTab === "documents" && (entity === "document" || notif.type === "upload")) ||
+        (activeTab === "submissions" && entity === "aaccup_submission") ||
+        (activeTab === "tasks" && entity === "aaccup_task")
     return matchesSearch && matchesTab
   })
 
@@ -109,8 +122,8 @@ export default function UserNotifications() {
     try {
       await notificationService.markRead(id)
       setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
-    } catch {
-      // The local list remains unchanged when the server update fails.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to mark notification as read")
     }
   }
 
@@ -119,16 +132,15 @@ export default function UserNotifications() {
     try {
       await notificationService.markAllReadForUser()
       setNotifs((prev) => prev.map((n) => ({ ...n, read: true })))
-    } catch {
-      // The local list remains unchanged when the server update fails.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to mark notifications as read")
     }
   }
 
   const handleViewNotification = (notif: Notification) => {
     if (!notif.read) markAsRead(notif.id)
-    // User portal: submission notifications (approval / return / rejection)
-    // must land in /user/aaccup?tab=submissions…, never the admin portal.
-    const route = resolveNotificationRoute(notif, "user")
+    // This inbox is shared by both shells; retain the signed-in user's portal.
+    const route = resolveNotificationRoute(notif, user && isAdminRole(user.role) ? "admin" : "user")
     if (!route) return
     const url = buildNotificationUrl(route, notif.entityId)
     navigate(url)
@@ -142,6 +154,7 @@ export default function UserNotifications() {
           <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-300">
             {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}
           </p>
+          <p className="mt-1 text-xs text-gray-500">Notifications stay here after they are read. The badge counts unread alerts only.</p>
         </div>
         {unreadCount > 0 && (
           <Button variant="outline" size="sm" onClick={markAllAsRead} className="h-8 rounded-lg px-3 text-xs">
@@ -150,6 +163,8 @@ export default function UserNotifications() {
           </Button>
         )}
       </div>
+
+      <PendingTaskReminders />
 
       <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-4 dark:border-slate-800">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -175,7 +190,9 @@ export default function UserNotifications() {
       </div>
 
       <div className="space-y-2.5">
-        {loading ? (
+        {loadError ? (
+          <Card><CardContent className="p-8 text-center text-sm text-red-600" role="alert">{loadError}</CardContent></Card>
+        ) : loading ? (
           <Card className="border-border/60 dark:border-gray-700 shadow-soft">
             <CardContent className="p-8 text-center">
               <p className="text-[14px] text-gray-500">Loading notifications...</p>
@@ -196,11 +213,21 @@ export default function UserNotifications() {
             return (
               <Card
                 key={notif.id}
-                onDoubleClick={() => handleViewNotification(notif)}
-                title={route ? "Double-click to view" : undefined}
+                id={`notification-${notif.id}`}
+                onClick={() => handleViewNotification(notif)}
+                role={route ? "link" : "button"}
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault()
+                    handleViewNotification(notif)
+                  }
+                }}
+                title={route ? "Click to view" : "Click to mark as read"}
                 className={cn(
                   "bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 border-l-4 border-l-transparent rounded-xl shadow-xs transition-colors hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer",
-                  !notif.read && "border-l-blue-600"
+                  !notif.read && "border-l-blue-600",
+                  notif.id === highlightId && "ring-2 ring-blue-300"
                 )}
               >
                 <CardContent className="p-5 sm:px-5 sm:py-4 md:px-5 md:py-4">
@@ -213,6 +240,7 @@ export default function UserNotifications() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{notif.title}</h3>
                           {!notif.read && <span className="size-1.5 rounded-full bg-blue-600 inline-block" aria-label="Unread" />}
+                          {notif.read && <span className="text-[11px] font-normal text-slate-400">Read</span>}
                         </div>
                         <p className="mt-0.5 line-clamp-2 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">{notif.message}</p>
                         {(() => {

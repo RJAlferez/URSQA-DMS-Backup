@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
-import { notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
+import { acknowledgeEntityNotifications, notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
 import {
   BadRequestError,
   ConflictError,
@@ -186,10 +186,11 @@ async function safeNotifyAssignee(
   try {
     const base = {
       title: "New task assigned",
-      message: `You have been assigned a new task: "${task.title}".`,
+      message: `You have been assigned a new task: "${task.title}" (${task.areaName}).${task.dueDate ? ` Due ${task.dueDate.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}.` : " No deadline is set."}`,
       entity: "aaccup_task",
       entityId: task.id,
-      actionUrl: "/user/aaccup",
+      actionUrl: `/user/aaccup?tab=tasks&highlight=${task.id}`,
+      forceEmail: true,
     };
     if (assigneeType === "USER") {
       await notifyUser(assigneeId, "AACCUP_TASK_ASSIGNED", base);
@@ -269,14 +270,17 @@ export async function listTasks(query: ListTasksQuery, actor: Actor): Promise<Li
 
   const { items, total } = await repo.list(where, page, pageSize, sortField, sortOrder);
   const ownSubmissions = items.length ? await repo.latestOwnSubmissions(items.map((task) => task.id), actor.id, items.flatMap((task) => task.requirementId ? [task.requirementId] : [])) : [];
-  const submissionsByTask = new Map(ownSubmissions.map((submission) => [submission.taskId, submission]));
+  const submissionsByTask = new Map<string, typeof ownSubmissions[number]>();
+  for (const submission of ownSubmissions) {
+    if (submission.taskId && !submissionsByTask.has(submission.taskId)) submissionsByTask.set(submission.taskId, submission);
+  }
   const legacyByRequirement = new Map(ownSubmissions.filter((submission) => !submission.taskId).map((submission) => [submission.requirementId, submission]));
 
   return {
     items: items.map((task) => {
       const submission = submissionsByTask.get(task.id) ?? (task.requirementId ? legacyByRequirement.get(task.requirementId) : undefined);
       return { ...task, mySubmission: submission ? {
-        id: submission.id, status: submission.status,
+        id: submission.id, status: submission.status, requirementId: submission.requirementId,
         documentTitle: submission.document.title, submittedAt: submission.submittedAt,
       } : null };
     }),
@@ -338,6 +342,7 @@ export async function createTask(input: CreateTaskInput, actor: Actor): Promise<
       assigneeId: input.assigneeId,
       assigneeLabel,
       priority: task.priority,
+      status: task.status,
     },
     ipAddress: actor.ipAddress,
     userAgent: actor.userAgent,
@@ -353,12 +358,12 @@ export async function createTask(input: CreateTaskInput, actor: Actor): Promise<
 // -----------------------------------------------------------------------------
 // Managers (aaccup.manage) may edit everything. The ASSIGNEE (USER target
 // matching the caller, or any member of the assigned DEPARTMENT) may only
-// transition the status along the allowed path:
-//   OPEN → IN_PROGRESS → COMPLETED
-// This is what makes tasks actionable by the people they are assigned to.
+// complete tasks without evidence requirements. New tasks start IN_PROGRESS;
+// legacy OPEN tasks remain directly actionable without a separate Start step.
+// Evidence-linked tasks complete through approval of their submission.
 // -----------------------------------------------------------------------------
 const ASSIGNEE_STATUS_TRANSITIONS: Record<string, string[]> = {
-  OPEN: ["IN_PROGRESS"],
+  OPEN: ["IN_PROGRESS", "COMPLETED"],
   IN_PROGRESS: ["COMPLETED"],
   COMPLETED: ["IN_PROGRESS"],
   CANCELLED: [],
@@ -394,13 +399,17 @@ export async function updateTask(
     if (!statusOnly) {
       throw new ForbiddenError("Assignees may only update the task status");
     }
-    if (existing.requirementId && input.status === "COMPLETED") {
-      throw new ConflictError("Submit your evidence for admin approval to complete this task.");
+    if (input.status === "COMPLETED") {
+      const evidence = await prisma.aaccupSubmission.findFirst({
+        where: { taskId: id, submittedBy: actor.id, deletedAt: null, status: { in: ["PENDING", "APPROVED", "NEEDS_REVISION"] } },
+        select: { id: true },
+      });
+      if (existing.requirementId || evidence) throw new ConflictError("Submit your evidence for admin approval to complete this task.");
     }
-    if (existing.status === "COMPLETED" && input.status === "IN_PROGRESS" && existing.requirementId) {
+    if (existing.status === "COMPLETED" && input.status === "IN_PROGRESS") {
       const evidence = await prisma.aaccupSubmission.findFirst({
         where: { submittedBy: actor.id, deletedAt: null,
-          OR: [{ taskId: id }, { taskId: null, requirementId: existing.requirementId }] },
+          OR: [{ taskId: id }, ...(existing.requirementId ? [{ taskId: null, requirementId: existing.requirementId }] : [])] },
         orderBy: [{ submittedAt: "desc" }, { id: "desc" }], select: { status: true },
       });
       if (evidence && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(evidence.status)) throw new ConflictError("Unsubmit your own evidence to reopen this task.");
@@ -433,7 +442,7 @@ export async function updateTask(
     : existing.assigneeType;
   const newAssigneeId = input.assigneeId ?? existing.assigneeId;
   const assigneeChanged =
-    input.assigneeType !== undefined ||
+    (input.assigneeType !== undefined && input.assigneeType !== existing.assigneeType) ||
     (input.assigneeId !== undefined && input.assigneeId !== existing.assigneeId);
   let assigneeData:
     | { assigneeType: "USER" | "DEPARTMENT"; assigneeId: string; assigneeLabel: string }
@@ -454,21 +463,27 @@ export async function updateTask(
         ? null
         : undefined;
 
-  const updated = await repo.update({
-    id,
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.category !== undefined ? { category: input.category } : {}),
-      ...(input.priority !== undefined ? { priority: input.priority } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
-      ...(input.requirementId !== undefined ? { requirementId: input.requirementId } : {}),
-      ...(input.requirementTemplateId !== undefined ? { requirementTemplateId: input.requirementTemplateId } : {}),
-      ...(assigneeData ? { ...assigneeData } : {}),
-      ...(completedAt !== undefined ? { completedAt } : {}),
-      updatedBy: actor.id,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const task = await repo.update({
+      id,
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.category !== undefined ? { category: input.category } : {}),
+        ...(input.priority !== undefined ? { priority: input.priority } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+        ...(input.requirementId !== undefined ? { requirementId: input.requirementId } : {}),
+        ...(input.requirementTemplateId !== undefined ? { requirementTemplateId: input.requirementTemplateId } : {}),
+        ...(assigneeData ? { ...assigneeData } : {}),
+        ...(completedAt !== undefined ? { completedAt } : {}),
+        updatedBy: actor.id,
+      },
+    }, tx);
+    if (input.status === "COMPLETED") {
+      await acknowledgeEntityNotifications("aaccup_task", [id], actor, tx);
+    }
+    return task;
   });
 
   await writeAudit({
@@ -492,6 +507,9 @@ export async function updateTask(
     userAgent: actor.userAgent,
   });
 
+  if (assigneeChanged && updated.assigneeId) {
+    await safeNotifyAssignee(updated.assigneeType, updated.assigneeId, updated);
+  }
   if (existing.status === "COMPLETED" && updated.status === "IN_PROGRESS") {
     const reviewers = await prisma.user.findMany({
       where: { status: "ACTIVE", deletedAt: null, role: { permissions: { some: { permission: { code: { in: ["aaccup.submission.review", "aaccup.manage"] } } } } } },
