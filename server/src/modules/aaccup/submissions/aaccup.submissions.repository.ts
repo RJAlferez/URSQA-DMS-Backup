@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ConflictError } from "@/utils/errors";
 import type { Prisma } from "@prisma/client";
 import type {
   AaccupSubmissionDetail,
@@ -130,17 +131,24 @@ export async function updateRemarks(
 export async function withdraw(
   id: string,
   reason: string | null,
+  expectedUpdatedAt: Date,
+  actorId: string,
+  taskId?: string,
 ): Promise<AaccupSubmissionDetail> {
-  const row = await prisma.aaccupSubmission.update({
-    where: { id },
-    data: {
-      status: "WITHDRAWN",
-      isCurrent: false,
-      withdrawnAt: new Date(),
-      withdrawalReason: reason,
-      updatedAt: new Date(),
-    },
-    include: SUBMISSION_INCLUDE,
+  const row = await prisma.$transaction(async (tx) => {
+    const changed = await tx.aaccupSubmission.updateMany({
+      where: { id, updatedAt: expectedUpdatedAt, deletedAt: null, status: { in: ["PENDING", "APPROVED", "NEEDS_REVISION"] } },
+      data: { status: "WITHDRAWN", isCurrent: false, withdrawnAt: new Date(), withdrawalReason: reason, ...(taskId ? { taskId } : {}) },
+    });
+    if (changed.count !== 1) throw new ConflictError("The submission changed. Refresh before un-submitting it.");
+    const submission = await tx.aaccupSubmission.findUniqueOrThrow({ where: { id }, include: SUBMISSION_INCLUDE });
+    if (submission.taskId) {
+      await tx.aaccupTask.updateMany({
+        where: { id: submission.taskId, deletedAt: null, status: { not: "CANCELLED" } },
+        data: { status: "IN_PROGRESS", completedAt: null, updatedBy: actorId },
+      });
+    }
+    return tx.aaccupSubmission.findUniqueOrThrow({ where: { id }, include: SUBMISSION_INCLUDE });
   });
   return toDetail(row);
 }

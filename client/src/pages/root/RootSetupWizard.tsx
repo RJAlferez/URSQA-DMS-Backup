@@ -188,7 +188,7 @@ export default function RootSetupWizard() {
   if (loading) {
     return (
       <div className="content-padding">
-        <PageHeader title="Platform Setup Wizard" description="Configure a newly installed URS-DMS instance" />
+        <PageHeader title="Platform Setup Wizard" description="Configure a newly installed URS-QA DMS instance" />
         <div className="min-h-[320px] flex items-center justify-center">
           <div className="w-8 h-8 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
         </div>
@@ -199,7 +199,7 @@ export default function RootSetupWizard() {
   if (error) {
     return (
       <div className="content-padding">
-        <PageHeader title="Platform Setup Wizard" description="Configure a newly installed URS-DMS instance" />
+        <PageHeader title="Platform Setup Wizard" description="Configure a newly installed URS-QA DMS instance" />
         <Card className="border-red-200 bg-red-50/50">
           <CardContent className="p-6 text-[13px] text-red-700">{error}</CardContent>
         </Card>
@@ -217,7 +217,7 @@ export default function RootSetupWizard() {
         description={
           completed
             ? "Platform setup completed — reopen the wizard to make changes"
-            : "Configure a newly installed URS-DMS instance"
+            : "Configure a newly installed URS-QA DMS instance"
         }
         actions={
           completed ? (
@@ -251,7 +251,7 @@ export default function RootSetupWizard() {
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
               <Rocket className="w-8 h-8 text-primary" />
             </div>
-            <h2 className="text-[18px] font-semibold text-gray-900">Welcome to the URS-DMS Setup Wizard</h2>
+            <h2 className="text-[18px] font-semibold text-gray-900">Welcome to the URS-QA DMS Setup Wizard</h2>
             <p className="text-[14px] text-gray-500 max-w-lg">
               This guided wizard configures your new instance: university identity, organization structure,
               folder and requirement templates, workflow and form assignments, and administrator accounts.
@@ -432,7 +432,7 @@ function StepPlatform({
     <div className="space-y-5">
       <div>
         <h3 className="text-[15px] font-semibold text-gray-900">Platform Information</h3>
-        <p className="text-[13px] text-gray-500 mt-0.5">Identity and defaults for this URS-DMS instance</p>
+        <p className="text-[13px] text-gray-500 mt-0.5">Identity and defaults for this URS-QA DMS instance</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

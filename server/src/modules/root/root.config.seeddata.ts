@@ -82,7 +82,7 @@ export const SEED_CONFIGURATIONS: SeedConfiguration[] = [
     key: "application.name",
     name: "Application Name",
     description: "Display name of the document management system",
-    value: "URS Document Management System",
+    value: "URS-QA DMS",
     valueType: "STRING",
   },
   {

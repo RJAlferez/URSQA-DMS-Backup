@@ -1,5 +1,6 @@
 import { apiGetPage, apiPost, apiPatch, apiDelete, apiGet, API_BASE, getAccessToken, type ApiErrorEnvelope } from "@/lib/http"
 import { sha256 as sha256Buffer } from "@/lib/sha256"
+import { recordClientAction } from "@/lib/actionFeedback"
 
 export type AreaSet = "AACCUP" | "ISO"
 
@@ -247,11 +248,12 @@ export async function reviewOnlineSubmission(
 export async function unsubmitOnlineSubmission(
   id: string,
   reason?: string,
+  taskId?: string,
 ): Promise<OnlineAaccupSubmission> {
   if (!id) throw new Error("Missing submission ID")
   return apiPost<OnlineAaccupSubmission>(
     `/aaccup/submissions/${encodeURIComponent(id)}/unsubmit`,
-    reason?.trim() ? { reason: reason.trim() } : {},
+    { ...(reason?.trim() ? { reason: reason.trim() } : {}), ...(taskId ? { taskId } : {}) },
   )
 }
 
@@ -352,6 +354,7 @@ export type OnlineTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT"
 export type OnlineTaskStatus = "OPEN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
 
 export interface OnlineAaccupTask {
+  mySubmission?: { id: string; status: string; documentTitle: string; submittedAt: string } | null
   id: string
   areaId: string
   areaCode: string
@@ -487,7 +490,7 @@ export interface RequirementUploadInput {
 export async function validateOnlineRequirementUpload(
   input: Pick<RequirementUploadInput, "requirementId" | "file" | "pageCount" | "expirationDate" | "metadata">,
 ): Promise<UploadValidationResult> {
-  return apiPost<UploadValidationResult>(
+  const result = await apiPost<UploadValidationResult>(
     `/aaccup/requirements/${encodeURIComponent(input.requirementId)}/validate-upload`,
     {
       filename: input.file.name,
@@ -502,6 +505,8 @@ export async function validateOnlineRequirementUpload(
       },
     },
   )
+  if (!result.valid) recordClientAction("error", `File upload validation failed: ${result.errors.map((issue) => issue.message).join(" ")}`)
+  return result
 }
 
 export async function uploadOnlineRequirementDocument(
@@ -541,12 +546,15 @@ export async function uploadOnlineRequirementDocument(
   const headers = Object.fromEntries(
     Object.entries(version.upload.headers).filter(([key]) => key.toLowerCase() !== "content-length"),
   )
-  const uploadResponse = await fetch(version.upload.url, {
-    method: "PUT",
-    headers,
-    body: input.file,
-  })
-  if (!uploadResponse.ok) throw new Error(`Object upload failed (${uploadResponse.status})`)
+  try {
+    const uploadResponse = await fetch(version.upload.url, { method: "PUT", headers, body: input.file })
+    if (!uploadResponse.ok) throw new Error(`Server returned ${uploadResponse.status}`)
+  } catch (error) {
+    const message = `File upload failed for ${input.file.name}: ${error instanceof Error ? error.message : "Network error"}`
+    recordClientAction("error", message)
+    if (error instanceof Error) error.message = message
+    throw error
+  }
 
   await apiPost<{ verified: true }>(
     `/documents/${encodeURIComponent(created.document.id)}/versions/${encodeURIComponent(uploadedVersion.id)}/verify`,

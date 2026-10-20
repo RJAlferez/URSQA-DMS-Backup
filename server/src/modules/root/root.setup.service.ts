@@ -217,11 +217,11 @@ export async function sendCredentials(
   assertPermission(actor, "setup.manage", "Missing permission: setup.manage");
   await sendEmail({
     to: input.email,
-    subject: "URS-DMS — Your administrator account",
+    subject: "URS-QA DMS — Your administrator account",
     body: [
       `Hello ${input.name},`,
       "",
-      `Your URS-DMS administrator account is ready.`,
+      `Your URS-QA DMS administrator account is ready.`,
       `  Role: ${input.roleName}`,
       `  Email: ${input.email}`,
       `  Initial password: ${input.password}`,

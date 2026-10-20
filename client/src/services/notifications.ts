@@ -73,6 +73,7 @@ function toClientNotification(n: ServerNotification): Notification {
 
 function mapServerType(serverType: string): NotificationType {
   const t = serverType.toLowerCase()
+  if (t.includes("failed")) return "rejection"
   if (t.includes("upload")) return "upload"
   if (t.includes("approved")) return "approval"
   if (t.includes("rejected")) return "rejection"

@@ -8,6 +8,7 @@ import {
   Flag,
   RefreshCw,
   Upload,
+  Undo2,
 } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Card, CardContent } from "@/components/ui/Card"
@@ -19,6 +20,7 @@ import { toast } from "@/lib/toast"
 import {
   listMyOnlineTasks,
   updateOnlineTask,
+  unsubmitOnlineSubmission,
   type OnlineAaccupTask,
 } from "@/services/aaccup"
 import { TaskSubmitDialog } from "@/components/aaccup/TaskSubmitDialog"
@@ -82,6 +84,23 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
   }
 
   const actionable = (task: OnlineAaccupTask) => task.status === "OPEN" || task.status === "IN_PROGRESS"
+  const handleUnsubmit = async (task: OnlineAaccupTask) => {
+    if (!window.confirm("Unsubmit your work? Any previous approval will no longer apply. After you upload again, an admin must approve the new submission.")) return
+    setUpdatingId(task.id)
+    try {
+      if (task.mySubmission && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(task.mySubmission.status)) {
+        await unsubmitOnlineSubmission(task.mySubmission.id, undefined, task.id)
+      } else {
+        await updateOnlineTask(task.id, { status: "IN_PROGRESS" })
+      }
+      toast.success("Work unsubmitted. Your admin has been notified; you can update and resubmit.")
+      await load()
+    } catch (unsubmitError) {
+      toast.error(unsubmitError instanceof Error ? unsubmitError.message : "Unable to unsubmit your work")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
   const taskFilter = searchParams.get("taskFilter")
   const highlightTaskId = searchParams.get("highlight")
   const visibleTasks = tasks.filter((task) => {
@@ -142,6 +161,9 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
         ) : (
           visibleTasks.map((task) => {
             const canChange = actionable(task)
+            const submission = task.mySubmission
+            const hasSubmittedWork = Boolean(submission && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(submission.status))
+            const canUnsubmit = hasSubmittedWork || task.status === "COMPLETED"
             return (
               <Card id={`task-${task.id}`} key={task.id} className={task.id === highlightTaskId ? "border-blue-400 shadow-md ring-2 ring-blue-100" : "border-slate-200/70 shadow-soft"}>
                 <CardContent className="p-5">
@@ -154,6 +176,9 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-[14px] font-semibold text-slate-900">{task.title}</p>
                           {taskStatusBadge(task.status)}
+                          {submission && <Badge variant={submission.status === "APPROVED" ? "success" : submission.status === "WITHDRAWN" ? "secondary" : "warning"}>
+                            {submission.status === "PENDING" ? "Awaiting approval" : submission.status === "APPROVED" ? "Approved" : submission.status === "WITHDRAWN" ? "Unsubmitted" : submission.status === "NEEDS_REVISION" ? "Returned for revision" : "Rejected"}
+                          </Badge>}
                           <Badge
                             variant={task.priority === "URGENT" || task.priority === "HIGH" ? "warning" : "secondary"}
                             className="text-[10px]"
@@ -168,6 +193,7 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                         {task.description && (
                           <p className="mt-1.5 text-[12px] text-slate-600 line-clamp-2">{task.description}</p>
                         )}
+                        {submission && <p className="mt-1.5 truncate text-[12px] text-slate-500">Your evidence: {submission.documentTitle}</p>}
                         {task.requirementTemplateName ? (
                           <p className="mt-1.5 text-[11px] text-primary-700">
                             Complete requirement template: {task.requirementTemplateName} (v{task.requirementTemplateVersion})
@@ -179,8 +205,11 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                         )}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {canChange && task.status === "OPEN" && (
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      {canUnsubmit && <Button size="sm" variant="outline" disabled={updatingId === task.id} onClick={() => void handleUnsubmit(task)}>
+                        <Undo2 className="mr-1.5 h-3.5 w-3.5" />Unsubmit
+                      </Button>}
+                      {canChange && task.status === "OPEN" && !hasSubmittedWork && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -191,7 +220,7 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                           Start
                         </Button>
                       )}
-                      {canChange && task.status === "IN_PROGRESS" && (
+                      {canChange && task.status === "IN_PROGRESS" && !task.requirementId && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -203,13 +232,13 @@ export function UserTasksTab({ navigation }: { navigation?: ReactNode }) {
                           Mark Complete
                         </Button>
                       )}
-                      {canChange && task.requirementId ? (
-                        <Button size="sm" className="shadow-soft" onClick={() => setSubmitTask(task)}>
+                      {canChange && task.requirementId && !hasSubmittedWork ? (
+                        <Button size="sm" className="shadow-soft" disabled={updatingId === task.id} onClick={() => setSubmitTask(task)}>
                           <Upload className="mr-1.5 h-3.5 w-3.5" />
-                          Submit Evidence
+                          {submission ? "Resubmit Evidence" : "Submit Evidence"}
                         </Button>
                       ) : (
-                        canChange && (
+                        canChange && !task.requirementId && (
                           <Badge variant="secondary" className="text-[10px]">
                             {task.requirementTemplateId ? "Complete template requirements" : "No requirement linked"}
                           </Badge>

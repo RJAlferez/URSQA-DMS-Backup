@@ -22,7 +22,7 @@ export default function ResetPasswordPage() {
   const passwordValid = useMemo(() => passwordMeetsRequirements(password), [password])
   const formValid = Boolean(token && passwordValid && password === confirmPassword)
 
-  useEffect(() => { document.title = "Reset Password | URS-DMS" }, [])
+  useEffect(() => { document.title = "Reset Password | URS-QA DMS" }, [])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -47,7 +47,7 @@ export default function ResetPasswordPage() {
       <AuthCard className="w-full max-w-md">
         <AuthCardHeader>
           <AuthCardTitle>Set a new password</AuthCardTitle>
-          <AuthCardDescription>Choose a strong password for your URS-DMS account.</AuthCardDescription>
+          <AuthCardDescription>Choose a strong password for your URS-QA DMS account.</AuthCardDescription>
         </AuthCardHeader>
         {error && <div className="mb-5 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
         {success ? (

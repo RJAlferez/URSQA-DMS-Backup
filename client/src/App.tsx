@@ -73,6 +73,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext"
 import { ThemeProvider } from "@/lib/theme"
 import { MobileBottomBar } from "@/components/layout/MobileBottomBar"
 import { ToastContainer, toast } from "@/lib/toast"
+import { ActionFeedbackBridge } from "@/components/layout/ActionFeedbackBridge"
 import { isAdminRole, isRootRole } from "@/lib/permissions"
 import { getDashboardOverview, type DashboardOverview } from "@/services/dashboard"
 import { getUploadsAnalytics, type UploadsAnalytics } from "@/services/analytics"
@@ -776,8 +777,8 @@ function AppContent() {
 
   useEffect(() => {
     document.title = ADMIN_PAGE_TITLES[activePage]
-       ? `${ADMIN_PAGE_TITLES[activePage]} | URS-DMS`
-      : "URS-DMS"
+       ? `${ADMIN_PAGE_TITLES[activePage]} | URS-QA DMS`
+      : "URS-QA DMS"
   }, [activePage])
 
   const handleNavigate = (page: string, query?: Record<string, string>) => {
@@ -990,8 +991,8 @@ function UserAppContent() {
 
   useEffect(() => {
     document.title = USER_PAGE_TITLES[activePage]
-       ? `${USER_PAGE_TITLES[activePage]} | URS-DMS`
-      : "URS-DMS"
+       ? `${USER_PAGE_TITLES[activePage]} | URS-QA DMS`
+      : "URS-QA DMS"
   }, [activePage])
 
   const handleToggleSidebar = () => {
@@ -1254,6 +1255,7 @@ function App() {
       <ThemeProvider>
         <AuthProvider>
           <ToastContainer />
+          <ActionFeedbackBridge />
           <AppRoutes />
         </AuthProvider>
       </ThemeProvider>

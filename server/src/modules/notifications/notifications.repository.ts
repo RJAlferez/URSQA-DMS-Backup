@@ -28,6 +28,13 @@ export type NotificationRow = Prisma.NotificationGetPayload<{
   select: typeof inboxSelect;
 }>;
 
+export async function findActionResult(userId: string, eventId: string): Promise<NotificationRow | null> {
+  return prisma.notification.findFirst({
+    where: { userId, metadata: { path: ["eventId"], equals: eventId } },
+    select: inboxSelect,
+  });
+}
+
 function inboxWhere(userId: string, extra: Prisma.NotificationWhereInput = {}): Prisma.NotificationWhereInput {
   return { userId, deletedAt: null, ...extra };
 }

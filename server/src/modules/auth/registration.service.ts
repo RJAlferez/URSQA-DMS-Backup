@@ -34,8 +34,8 @@ export async function createInvitation(email: string, invitedById?: string | nul
 
   await sendEmail({
     to: normalizedEmail,
-    subject: "URS-DMS registration invitation",
-    body: `<p>You have been invited to create an account in URS-DMS.</p><p><a href="${registrationUrl(token)}">Complete your registration</a></p><p>This link expires in 24 hours and can only be used once.</p>`,
+    subject: "URS-QA DMS registration invitation",
+    body: `<p>You have been invited to create an account in URS-QA DMS.</p><p><a href="${registrationUrl(token)}">Complete your registration</a></p><p>This link expires in 24 hours and can only be used once.</p>`,
   });
   return { email: normalizedEmail, expiresAt: expiresAt.toISOString() };
 }

@@ -1,3 +1,5 @@
+import { recordRequestAction } from "@/lib/actionFeedback";
+
 // =============================================================================
 // URS-DMS — minimal HTTP client for the backend API.
 // Every service layer (auth, documents, aaccup, root, notifications) talks to
@@ -200,7 +202,14 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  return (await requestEnvelope<T>(method, path, body)).data;
+  try {
+    const data = (await requestEnvelope<T>(method, path, body)).data;
+    if (getAccessToken()) recordRequestAction(method, path, "success");
+    return data;
+  } catch (error) {
+    if (getAccessToken()) recordRequestAction(method, path, "error", error instanceof Error ? error.message : "The action failed.");
+    throw error;
+  }
 }
 
 export const apiGet = <T>(path: string): Promise<T> => request<T>("GET", path);

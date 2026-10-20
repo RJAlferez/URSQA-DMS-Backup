@@ -20,14 +20,12 @@ export function AuthLayout({ children, className, maxWidthClass }: AuthLayoutPro
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-navy-900 via-navy-800 to-primary-700 flex-col justify-between p-12 xl:p-16">
         <div>
           <div className="flex items-center gap-3 mb-16">
-            <Logo size="lg" showText={true} subtitle="Document Management System" className="[&_h1]:text-white [&_p]:text-white/70" />
+            <Logo size="lg" showText={true} subtitle="Quality Assurance Data Management System" className="[&_h1]:text-white [&_p]:text-white/70" />
           </div>
 
           <div className="mb-12">
             <h2 className="text-4xl xl:text-5xl font-extrabold text-white leading-tight mb-6">
-              Secure.<br />
-              Organized.<br />
-              Accessible.
+              Quality Assurance Office
             </h2>
             <p className="text-white/80 text-lg leading-relaxed max-w-md">
               A centralized platform for managing university documents efficiently and securely.

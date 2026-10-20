@@ -316,7 +316,7 @@ function toPdfHtml(items: AuditLogListItem[], q: ExportAuditQuery): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>URS-DMS Audit Log Report</title>
+  <title>URS-QA DMS Audit Log Report</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #111; padding: 40px; max-width: 1200px; margin: 0 auto; }
     h1 { font-size: 22px; margin-bottom: 4px; color: #2563EB; }
@@ -331,7 +331,7 @@ function toPdfHtml(items: AuditLogListItem[], q: ExportAuditQuery): string {
   </style>
 </head>
 <body>
-  <h1>URS-DMS — Audit Log Report</h1>
+  <h1>URS-QA DMS — Audit Log Report</h1>
   <p class="subtitle">Generated ${now} | ${items.length} records</p>
   <div class="meta">
     <strong>Generated:</strong> ${now}<br>
@@ -354,7 +354,7 @@ function toPdfHtml(items: AuditLogListItem[], q: ExportAuditQuery): string {
     </thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="footer">URS-DMS Audit Log Report &mdash; Generated ${now}</p>
+  <p class="footer">URS-QA DMS Audit Log Report &mdash; Generated ${now}</p>
 </body>
 </html>`;
 }

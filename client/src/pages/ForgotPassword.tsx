@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState("")
 
-  useEffect(() => { document.title = "Forgot Password | URS-DMS" }, [])
+  useEffect(() => { document.title = "Forgot Password | URS-QA DMS" }, [])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()

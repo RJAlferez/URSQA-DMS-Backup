@@ -100,6 +100,21 @@ export async function findById(
   return row ? toDetail(row) : null;
 }
 
+export async function latestOwnSubmissions(taskIds: string[], userId: string, requirementIds: string[]) {
+  return prisma.aaccupSubmission.findMany({
+    where: { submittedBy: userId, deletedAt: null, OR: [
+      { taskId: { in: taskIds } },
+      { taskId: null, requirementId: { in: requirementIds } },
+    ] },
+    distinct: ["taskId", "requirementId"],
+    orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true, taskId: true, requirementId: true, status: true, submittedAt: true,
+      document: { select: { title: true } },
+    },
+  });
+}
+
 export interface CreateTaskArgs {
   areaId: string;
   title: string;

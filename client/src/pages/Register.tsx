@@ -35,7 +35,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({ firstName: "", middleName: "", lastName: "", suffix: "", employeeId: "", campusId: "", collegeId: "", programId: "", officeId: "", password: "", confirmPassword: "" })
 
   useEffect(() => {
-    document.title = "Register | URS-DMS"
+    document.title = "Register | URS-QA DMS"
     if (!token) {
       setLoading(false)
       return
@@ -172,7 +172,7 @@ export default function RegisterPage() {
       <AuthCard className="w-full p-5 sm:p-8">
         <AuthCardHeader>
           <AuthCardTitle>Create your account</AuthCardTitle>
-          <AuthCardDescription>Complete your profile to activate your URS-DMS account.</AuthCardDescription>
+          <AuthCardDescription>Complete your profile to activate your URS-QA DMS account.</AuthCardDescription>
         </AuthCardHeader>
         {error && <div className="mb-5 flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-600"><AlertCircle className="h-4 w-4 shrink-0" /><span>{error}</span></div>}
         {success ? (

@@ -139,7 +139,7 @@ export default function MyActivity() {
     <div className="content-padding section-stack">
       <PageHeader
         title="My Activity"
-        description={`Your recent activity across URS-DMS${total > 0 ? ` · ${total} entries` : ""}`}
+        description={`Your recent activity across URS-QA DMS${total > 0 ? ` · ${total} entries` : ""}`}
         actions={
           <div className="flex items-center gap-2">
             <Select value={dateRange} onValueChange={(value) => { setDateRange(value); setPage(1) }}>
@@ -201,7 +201,7 @@ export default function MyActivity() {
           <Clock className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-[13px] text-gray-500">No activity found</p>
           <p className="text-[12px] text-gray-400 mt-1">
-            {q || activeTab !== "all" ? "Try adjusting your filters." : "Your actions will appear here as you use URS-DMS."}
+            {q || activeTab !== "all" ? "Try adjusting your filters." : "Your actions will appear here as you use URS-QA DMS."}
           </p>
         </div>
       ) : (

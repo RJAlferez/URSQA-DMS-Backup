@@ -27,7 +27,7 @@ void boot()
   .then(() => {
     const app = createApp();
     const server = app.listen(env.PORT, () => {
-      logger.info(`URS-DMS server listening on port ${env.PORT} (${env.NODE_ENV})`);
+      logger.info(`URS-QA DMS server listening on port ${env.PORT} (${env.NODE_ENV})`);
     });
 
     // Legacy in-process email worker — continues to serve as a fallback.

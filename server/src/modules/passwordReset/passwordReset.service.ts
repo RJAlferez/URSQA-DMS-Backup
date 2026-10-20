@@ -70,9 +70,9 @@ export async function requestPasswordReset(
   const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
   await sendEmail({
     to: user.email,
-    subject: "Reset your URS-DMS password",
+    subject: "Reset your URS-QA DMS password",
     body:
-      `<p>We received a request to reset the password for your URS-DMS account.</p>` +
+      `<p>We received a request to reset the password for your URS-QA DMS account.</p>` +
       `<p>This link is valid for <strong>20 minutes</strong> and can be used only once:</p>` +
       `<p><a href="${resetUrl}">Reset my password</a></p>` +
       `<p>If you did not request a password reset, you can safely ignore this email.` +
@@ -187,7 +187,10 @@ export async function getDevResetLink(
   const message = await prisma.emailMessage.findFirst({
     where: {
       to: email,
-      subject: { contains: "Reset your URS-DMS password" },
+      OR: [
+        { subject: { contains: "Reset your URS-QA DMS password" } },
+        { subject: { contains: "Reset your URS-DMS password" } },
+      ],
     },
     orderBy: { createdAt: "desc" },
     select: { body: true },

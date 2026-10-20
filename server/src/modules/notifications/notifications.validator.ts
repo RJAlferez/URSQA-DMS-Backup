@@ -42,3 +42,11 @@ export const updateNotificationPreferenceSchema = z.object({
   timezone: z.string().trim().min(1).max(80).optional(),
 }).strict();
 export type UpdateNotificationPreferenceBody = z.infer<typeof updateNotificationPreferenceSchema>;
+
+export const actionResultSchema = z.object({
+  eventId: z.string().uuid(),
+  outcome: z.enum(["success", "error"]),
+  message: z.string().trim().min(1).max(1000),
+  actionUrl: z.string().max(300).regex(/^\/[a-zA-Z0-9/_-]*$/).optional(),
+}).strict();
+export type ActionResultBody = z.infer<typeof actionResultSchema>;

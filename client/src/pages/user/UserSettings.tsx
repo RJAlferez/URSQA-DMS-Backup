@@ -195,8 +195,8 @@ export default function UserSettings() {
             <CardTitle className="text-[15px] font-semibold text-gray-900">About</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-[13px] text-gray-500">
-            <p><strong className="text-gray-900">URS-DMS</strong> v1.0.0</p>
-            <p>University Research Services - Document Management System</p>
+            <p><strong className="text-gray-900">URS-QA DMS</strong> v1.0.0</p>
+            <p>Quality Assurance Data Management System</p>
             <p>Developed for URS accreditation management</p>
           </CardContent>
         </Card>

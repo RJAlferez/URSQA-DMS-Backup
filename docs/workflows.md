@@ -24,6 +24,32 @@ Authorized callers create and update folders, manage shares, and may move/copy/Z
 
 Document requests expose creation plus management actions under `request.create`/`request.manage`. AACCUP area, requirement, submission, and task routers expose the respective creation, review, archive/restore, and analytics operations; exact state transitions are validator/service-defined and must not be inferred from UI labels alone.
 
+## Unsubmit and resubmit task evidence
+
+- My Tasks shows each caller's latest evidence and review status. Unsubmit is
+  available for pending, approved, and returned work owned by that caller.
+- Unsubmit retains evidence and review history, removes it from current approved
+  evidence, and reopens the linked task. Cancelled tasks remain cancelled.
+- Resubmit Evidence creates a new pending submission and a fresh workflow instance.
+  Previous approval never carries to the replacement. Approval completes its task.
+  Concurrent review/withdrawal conflicts require a refresh.
+- Reviewers receive a bell notification and one immediate queued email for each
+  unsubmission or resubmission, including names and task/accreditation context.
+  These workflow alerts bypass digest delivery schedules.
+
+## Action receipts
+
+Authenticated changes and existing success/error popups produce per-user receipts
+in the notification bell and immediate email queue, including failed uploads.
+Internal upload preparation, polling, session refresh, and notification maintenance
+do not create recursive receipts. Popups appear immediately. Receipt delivery
+retries after network failure or reconnection, with up to 100 unsent receipts
+retained in browser storage for that account.
+
+The authenticated receipt API always targets the caller's inbox and labels the
+outcome as client-reported in metadata. It never accepts a recipient ID. Email
+content is escaped; actual delivery depends on the configured SMTP provider.
+
 ## Audit flow
 
 Route/service operations call `writeAudit` where implemented. Request context supplies actor/network/correlation context. Permission denials are security events. Audit readers/admins use the audit API; ROOT handles retention/archive/review operations.

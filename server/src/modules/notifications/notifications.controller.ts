@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { ActionResultBody } from "@/modules/notifications/notifications.validator";
 import { sendNoContent, sendSuccess } from "@/utils/apiResponse";
 import * as service from "@/modules/notifications/notifications.service";
 import type {
@@ -21,6 +22,11 @@ function toActor(req: Request): service.Actor {
     ipAddress: req.context.ipAddress,
     userAgent: req.context.userAgent,
   };
+}
+
+export async function reportActionResultHandler(req: Request, res: Response): Promise<void> {
+  const result = await service.reportActionResult(req.body as ActionResultBody, toActor(req));
+  sendSuccess(res, result, 201);
 }
 
 export async function listNotificationsHandler(req: Request, res: Response): Promise<void> {

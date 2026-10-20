@@ -29,6 +29,12 @@ export interface AaccupTaskListItem {
   updatedBy: string | null;
   updatedByName: string | null;
   completedAt: Date | null;
+  mySubmission?: {
+    id: string;
+    status: string;
+    documentTitle: string;
+    submittedAt: Date;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }

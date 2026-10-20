@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/modules/email/email.service";
-import { notifyUser } from "@/modules/notifications/notifications.service";
+import { escapeNotificationHtml, notifyUser } from "@/modules/notifications/notifications.service";
 
 const TICK_MS = 15 * 60 * 1000;
 
@@ -29,11 +29,11 @@ export async function runNotificationSchedulePass(): Promise<void> {
       select: { title: true, message: true },
     });
     if (notifications.length > 0) {
-      const items = notifications.map((item) => `<li><strong>${item.title}</strong> — ${item.message}</li>`).join("");
+      const items = notifications.map((item) => `<li><strong>${escapeNotificationHtml(item.title)}</strong> — ${escapeNotificationHtml(item.message)}</li>`).join("");
       await sendEmail({
         to: preference.user.email,
-        subject: `URS-DMS — ${preference.frequency.toLowerCase()} notification digest`,
-        body: `<p>Hello ${preference.user.firstName},</p><p>Here are your recent URS-DMS notifications:</p><ul>${items}</ul>`,
+        subject: `URS-QA DMS — ${preference.frequency.toLowerCase()} notification digest`,
+        body: `<p>Hello ${escapeNotificationHtml(preference.user.firstName)},</p><p>Here are your recent URS-QA DMS notifications:</p><ul>${items}</ul>`,
       });
     }
     await prisma.notificationPreference.update({ where: { id: preference.id }, data: { lastDigestAt: now } });
@@ -54,7 +54,7 @@ export async function runNotificationSchedulePass(): Promise<void> {
       const alreadySent = await prisma.notification.findFirst({ where: { userId: preference.userId, type: "AACCUP_TASK_DEADLINE", entityId: task.id, createdAt: { gte: new Date(now.getTime() - 26 * 60 * 60 * 1000) } }, select: { id: true } });
       if (alreadySent) continue;
       await notifyUser(preference.userId, "AACCUP_TASK_DEADLINE", { title: "Task deadline approaching", message: `Task "${task.title}" is due ${task.dueDate?.toLocaleString() ?? "soon"}.`, entity: "aaccup_task", entityId: task.id, actionUrl: "/user/aaccup?tab=tasks" });
-      await sendEmail({ to: preference.user.email, subject: "URS-DMS — Task deadline approaching", body: `<p>Your task <strong>${task.title}</strong> is due ${task.dueDate?.toLocaleString() ?? "soon"}.</p>` });
+      await sendEmail({ to: preference.user.email, subject: "URS-QA DMS — Task deadline approaching", body: `<p>Your task <strong>${task.title}</strong> is due ${task.dueDate?.toLocaleString() ?? "soon"}.</p>` });
     }
   }
 }

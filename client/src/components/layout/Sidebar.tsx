@@ -108,7 +108,7 @@ export function Sidebar({ collapsed = false, onToggle, activePage = "dashboard",
             onClick={() => handleNavigate("dashboard")}
             className="hover:opacity-90 transition-opacity"
           >
-            <Logo size="sm" showText={!collapsed} subtitle="Document System" onDark />
+            <Logo size="sm" showText={!collapsed} subtitle="Quality Assurance" onDark />
           </button>
         </div>
 

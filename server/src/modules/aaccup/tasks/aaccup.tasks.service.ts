@@ -268,9 +268,18 @@ export async function listTasks(query: ListTasksQuery, actor: Actor): Promise<Li
   const pageSize = query.pageSize;
 
   const { items, total } = await repo.list(where, page, pageSize, sortField, sortOrder);
+  const ownSubmissions = items.length ? await repo.latestOwnSubmissions(items.map((task) => task.id), actor.id, items.flatMap((task) => task.requirementId ? [task.requirementId] : [])) : [];
+  const submissionsByTask = new Map(ownSubmissions.map((submission) => [submission.taskId, submission]));
+  const legacyByRequirement = new Map(ownSubmissions.filter((submission) => !submission.taskId).map((submission) => [submission.requirementId, submission]));
 
   return {
-    items,
+    items: items.map((task) => {
+      const submission = submissionsByTask.get(task.id) ?? (task.requirementId ? legacyByRequirement.get(task.requirementId) : undefined);
+      return { ...task, mySubmission: submission ? {
+        id: submission.id, status: submission.status,
+        documentTitle: submission.document.title, submittedAt: submission.submittedAt,
+      } : null };
+    }),
     meta: {
       page,
       pageSize,
@@ -351,7 +360,7 @@ export async function createTask(input: CreateTaskInput, actor: Actor): Promise<
 const ASSIGNEE_STATUS_TRANSITIONS: Record<string, string[]> = {
   OPEN: ["IN_PROGRESS"],
   IN_PROGRESS: ["COMPLETED"],
-  COMPLETED: [],
+  COMPLETED: ["IN_PROGRESS"],
   CANCELLED: [],
 };
 
@@ -384,6 +393,17 @@ export async function updateTask(
     const statusOnly = Object.keys(input).every((key) => key === "status");
     if (!statusOnly) {
       throw new ForbiddenError("Assignees may only update the task status");
+    }
+    if (existing.requirementId && input.status === "COMPLETED") {
+      throw new ConflictError("Submit your evidence for admin approval to complete this task.");
+    }
+    if (existing.status === "COMPLETED" && input.status === "IN_PROGRESS" && existing.requirementId) {
+      const evidence = await prisma.aaccupSubmission.findFirst({
+        where: { submittedBy: actor.id, deletedAt: null,
+          OR: [{ taskId: id }, { taskId: null, requirementId: existing.requirementId }] },
+        orderBy: [{ submittedAt: "desc" }, { id: "desc" }], select: { status: true },
+      });
+      if (evidence && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(evidence.status)) throw new ConflictError("Unsubmit your own evidence to reopen this task.");
     }
   }
 
@@ -472,6 +492,16 @@ export async function updateTask(
     userAgent: actor.userAgent,
   });
 
+  if (existing.status === "COMPLETED" && updated.status === "IN_PROGRESS") {
+    const reviewers = await prisma.user.findMany({
+      where: { status: "ACTIVE", deletedAt: null, role: { permissions: { some: { permission: { code: { in: ["aaccup.submission.review", "aaccup.manage"] } } } } } },
+      select: { id: true },
+    });
+    await notifyUsers(reviewers.map((user) => user.id), "SYSTEM_ANNOUNCEMENT", {
+      title: "Task unsubmitted", message: `"${updated.title}" was reopened by its assignee for changes.`,
+      entity: "aaccup_task", entityId: id, actionUrl: `/aaccup?tab=tasks&highlight=${id}`, forceEmail: true,
+    }).catch(() => undefined);
+  }
   return updated;
 }
 

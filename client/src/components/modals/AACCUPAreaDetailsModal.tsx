@@ -674,7 +674,7 @@ export function AACCUPAreaDetailsModal({
                     ownerId: raw.submittedById ?? "",
                     ownerName: raw.submittedByName ?? "Unknown",
                     size: 0,
-                    status: (raw.status === "APPROVED" ? "Approved" : raw.status === "REJECTED" ? "Rejected" : raw.status === "NEEDS_REVISION" ? "Returned" : "Pending") as DocumentStatus,
+                    status: statusLabel[raw.status] as DocumentStatus,
                     blobId: `online:${raw.documentId}`,
                     currentVersionId: "",
                     versionCount: 1,

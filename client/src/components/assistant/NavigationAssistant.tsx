@@ -18,7 +18,7 @@ type AssistantMessage = {
 type AssistantActionTarget = "DASHBOARD" | "MY_DOCUMENTS" | "MY_REQUESTS" | "REQUESTS" | "AACCUP" | "ISO" | "NOTIFICATIONS" | "MY_ACTIVITY" | "PROFILE" | "SETTINGS" | "USER_MANAGEMENT" | "AUDIT_LOGS" | "ORGANIZATION" | "ROOT_CONSOLE" | "ROLES_PERMISSIONS"
 type AssistantAction = { label: string; target: AssistantActionTarget }
 
-const WELCOME = "Hi! I can help you navigate URS-DMS. Ask me where to find a feature or how to use a page."
+const WELCOME = "Hi! I can help you navigate URS-QA DMS. Ask me where to find a feature or how to use a page."
 const MAX_MESSAGE_LENGTH = 1000
 
 const suggestions = {
@@ -49,7 +49,7 @@ function assistantAudience(role?: string): keyof typeof suggestions {
 }
 
 function welcomeFor(audience: keyof typeof suggestions): string {
-  if (audience === "root") return "I can help you navigate URS-DMS and Root Console features."
+  if (audience === "root") return "I can help you navigate URS-QA DMS and Root Console features."
   if (audience === "admin") return "I can help you navigate submissions, accreditation areas, requests, users, and audit tools."
   return "I can help you with My Documents, My Requests, AACCUP/ISO, Notifications, and other User Portal features."
 }
@@ -104,7 +104,7 @@ export function NavigationAssistant() {
     } catch (error) {
       const errorMessage = error instanceof ApiRequestError && error.status === 429
         ? "You've sent several requests quickly. Please wait a moment and try again."
-        : "The URS-DMS Assistant is temporarily unavailable. Please try again."
+        : "The URS-QA DMS Assistant is temporarily unavailable. Please try again."
       setMessages((current) => current.map((item) => item.id === pendingId ? { id: pendingId, role: "assistant", content: errorMessage } : item))
     } finally {
       setSending(false)
@@ -122,7 +122,7 @@ export function NavigationAssistant() {
     <>
       {open && (
         <section
-          aria-label="URS-DMS Assistant"
+          aria-label="URS-QA DMS Assistant"
           className="fixed inset-x-4 bottom-20 z-[80] flex h-[min(600px,calc(100dvh-6rem))] flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)] dark:bg-gray-900 lg:inset-x-auto lg:bottom-6 lg:right-6 lg:h-[560px] lg:w-[380px]"
         >
           <header className="flex shrink-0 items-center justify-between bg-navy-900 px-4 py-3.5 text-white">
@@ -131,11 +131,11 @@ export function NavigationAssistant() {
                 <Bot className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="truncate text-[14px] font-bold">URS-DMS Assistant</h2>
+                <h2 className="truncate text-[14px] font-bold">URS-QA DMS Assistant</h2>
                 <p className="text-[11px] text-blue-200">Navigation Guide</p>
               </div>
             </div>
-            <Button variant="ghost" size="icon" aria-label="Close URS-DMS Assistant" onClick={() => setOpen(false)} className="h-9 w-9 text-blue-100 hover:bg-white/10 hover:text-white">
+            <Button variant="ghost" size="icon" aria-label="Close URS-QA DMS Assistant" onClick={() => setOpen(false)} className="h-9 w-9 text-blue-100 hover:bg-white/10 hover:text-white">
               <X className="h-4 w-4" />
             </Button>
           </header>
@@ -186,15 +186,15 @@ export function NavigationAssistant() {
           </div>
 
           <form onSubmit={(event) => { event.preventDefault(); void sendMessage() }} className="flex shrink-0 items-end gap-2 border-t border-border bg-white p-3 dark:bg-gray-900">
-            <label htmlFor="assistant-message" className="sr-only">Ask about URS-DMS</label>
-            <Textarea id="assistant-message" value={input} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask about URS-DMS..." rows={2} disabled={sending} className="min-h-[44px] resize-none py-2.5 text-[13px]" />
+            <label htmlFor="assistant-message" className="sr-only">Ask about URS-QA DMS</label>
+            <Textarea id="assistant-message" value={input} maxLength={MAX_MESSAGE_LENGTH} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask about URS-QA DMS..." rows={2} disabled={sending} className="min-h-[44px] resize-none py-2.5 text-[13px]" />
             <Button type="submit" size="icon" aria-label="Send message" disabled={sending || !input.trim()} className="h-10 w-10 shrink-0">
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
         </section>
       )}
-      <Button type="button" size="icon" aria-label={open ? "Close URS-DMS Assistant" : "Open URS-DMS Assistant"} onClick={() => setOpen((current) => !current)} className="fixed bottom-20 right-4 z-[80] h-12 w-12 rounded-2xl shadow-lift shadow-primary/25 lg:bottom-6 lg:right-6">
+      <Button type="button" size="icon" aria-label={open ? "Close URS-QA DMS Assistant" : "Open URS-QA DMS Assistant"} onClick={() => setOpen((current) => !current)} className="fixed bottom-20 right-4 z-[80] h-12 w-12 rounded-2xl shadow-lift shadow-primary/25 lg:bottom-6 lg:right-6">
         {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
       </Button>
     </>

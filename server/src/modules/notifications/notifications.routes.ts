@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { actionResultSchema } from "@/modules/notifications/notifications.validator";
+import { reportActionResultHandler } from "@/modules/notifications/notifications.controller";
 import { asyncHandler } from "@/utils/asyncHandler";
 import { authenticate } from "@/middlewares/authenticate";
 import { requirePermission } from "@/middlewares/authorize";
@@ -42,6 +44,13 @@ import {
 export const notificationsRouter: Router = Router();
 
 notificationsRouter.use(authenticate);
+
+notificationsRouter.post(
+  "/action-results",
+  requirePermission("notification.read"),
+  validateBody(actionResultSchema),
+  asyncHandler(reportActionResultHandler),
+);
 
 notificationsRouter.get(
   "/",

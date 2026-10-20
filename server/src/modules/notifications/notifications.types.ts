@@ -59,6 +59,8 @@ export interface NotificationPreferenceView {
 
 /** Programmatic emit surface for other modules (module-agnostic). */
 export interface NotifyInput {
+  /** Critical workflow alerts and explicitly requested action receipts bypass digests. */
+  forceEmail?: boolean;
   title?: string;
   message?: string;
   priority?: NotificationPriority;

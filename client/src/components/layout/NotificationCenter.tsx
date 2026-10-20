@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
+import * as Popover from "@radix-ui/react-popover"
 import { Bell, Check, CheckCheck, X } from "lucide-react"
 import { Button } from "@/components/ui/Button"
 import { Badge } from "@/components/ui/Badge"
@@ -55,8 +56,13 @@ export function NotificationCenter() {
 
   useEffect(() => {
     void load()
+    const onUpdate = () => { void load() }
+    window.addEventListener("urs:notifications-updated", onUpdate)
     intervalRef.current = setInterval(() => { void load() }, POLL_INTERVAL_MS)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      window.removeEventListener("urs:notifications-updated", onUpdate)
+    }
   }, [load])
 
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -112,24 +118,29 @@ export function NotificationCenter() {
   }
 
   return (
-    <div className="relative">
+    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Trigger asChild>
       <Button
         variant="ghost"
         size="icon"
         className="relative w-9 h-9 text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-400"
-        onClick={() => setIsOpen(!isOpen)}
+        aria-label="Open notifications"
       >
         <Bell className="w-[18px] h-[18px]" />
         {unreadCount > 0 && (
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
         )}
       </Button>
-
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/5" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 w-96 rounded-xl border border-border bg-white shadow-2xl z-[60] dark:border-gray-700 dark:bg-[#111827] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+      </Popover.Trigger>
+      <Popover.Portal>
+          <Popover.Content
+            align="end"
+            sideOffset={8}
+            collisionPadding={12}
+            aria-label="Notifications"
+            className="z-[200] flex w-96 max-w-[calc(100vw-1.5rem)] max-h-[var(--radix-popover-content-available-height)] flex-col overflow-hidden rounded-xl border border-border bg-white shadow-2xl outline-none dark:border-gray-700 dark:bg-[#111827]"
+          >
+            <div className="flex shrink-0 items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">
                 <h3 className="text-[14px] font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
                 {unreadCount > 0 && (
@@ -140,13 +151,13 @@ export function NotificationCenter() {
                 <button onClick={markAllRead} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md text-[12px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <CheckCheck className="w-3.5 h-3.5" /> Mark all read
                 </button>
-                <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md">
+                <button aria-label="Close notifications" onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md">
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
+            <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-gray-100 dark:border-gray-700 overflow-x-auto">
               {tabs.map((tab) => {
                 const count = tab === "All"
                   ? unreadCount
@@ -173,7 +184,7 @@ export function NotificationCenter() {
               })}
             </div>
 
-            <div className="max-h-96 overflow-y-auto">
+            <div className="min-h-0 max-h-96 overflow-y-auto">
               {loading && notifications.length === 0 ? (
                 <div className="py-12 text-center text-[13px] text-gray-500">Loading...</div>
               ) : displayedNotifications.length === 0 ? (
@@ -223,7 +234,7 @@ export function NotificationCenter() {
               )}
             </div>
 
-            <div className="px-4 py-2.5 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+            <div className="shrink-0 px-4 py-2.5 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
               <button
                 onClick={() => { setIsOpen(false); navigate("/notifications") }}
                 className="w-full text-center text-[12px] text-primary hover:text-primary font-medium"
@@ -231,9 +242,8 @@ export function NotificationCenter() {
                 View all notifications
               </button>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+          </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }

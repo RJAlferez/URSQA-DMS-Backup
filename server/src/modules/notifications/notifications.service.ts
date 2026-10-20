@@ -18,6 +18,7 @@ import type {
   UnreadCountResult,
 } from "@/modules/notifications/notifications.types";
 import type { ListNotificationsQuery, UpdateNotificationPreferenceBody } from "@/modules/notifications/notifications.validator";
+import type { ActionResultBody } from "@/modules/notifications/notifications.validator";
 
 // =============================================================================
 // URS-DMS — Notifications service (Sprint 7.3)
@@ -207,8 +208,8 @@ export async function createAnnouncement(
   );
   await queueEmails(
     users.map((user) => user.id),
-    `URS-DMS — ${input.title}`,
-    `<h2>${input.title}</h2><p>${input.message}</p>${input.actionUrl ? `<p><a href="${input.actionUrl}">Open URS-DMS</a></p>` : ""}`,
+    `URS-QA DMS — ${input.title}`,
+    `<h2>${input.title}</h2><p>${input.message}</p>${input.actionUrl ? `<p><a href="${input.actionUrl}">Open URS-QA DMS</a></p>` : ""}`,
   );
   if (created > 0) {
     void writeAudit({
@@ -297,15 +298,15 @@ function buildPayload(
   input: NotifyInput,
 ): { title: string; message: string; priority: NotificationPriorityLike; email?: { subject: string; body: string } } {
   const spec = resolveSpec(type);
+  const title = input.title ?? spec.defaultTitle;
+  const message = input.message ?? spec.defaultMessage;
   return {
-    title: input.title ?? spec.defaultTitle,
-    message: input.message ?? spec.defaultMessage,
+    title,
+    message,
     priority: input.priority ?? spec.defaultPriority,
     ...(input.email
       ? { email: input.email }
-      : spec.email
-        ? { email: spec.email }
-        : {}),
+      : { email: { subject: `URS-QA DMS — ${title}`, body: `<p>${escapeNotificationHtml(message)}</p>` } }),
   };
 }
 
@@ -331,7 +332,7 @@ export async function notifyUser(
     actionUrl: input.actionUrl,
     metadata: input.metadata,
   });
-  if (payload.email && user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE") {
+  if (payload.email && (input.forceEmail || (user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE"))) {
     await sendEmail({ to: user.email, ...payload.email }).catch(() => undefined);
   }
 
@@ -364,7 +365,7 @@ export async function notifyUsers(
   if (payload.email) {
     await Promise.allSettled(
       users
-        .filter((user) => user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE")
+        .filter((user) => input.forceEmail || (user.notificationPreference?.emailEnabled !== false && (user.notificationPreference?.frequency ?? "IMMEDIATE") === "IMMEDIATE"))
         .map((user) => sendEmail({ to: user.email, ...payload.email! })),
     );
   }
@@ -372,3 +373,23 @@ export async function notifyUsers(
 }
 
 type NotificationPriorityLike = "LOW" | "MEDIUM" | "HIGH";
+
+export function escapeNotificationHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+}
+
+/** A client receipt can only be appended to the authenticated caller's inbox. */
+export async function reportActionResult(input: ActionResultBody, actor: Actor): Promise<NotificationListItem | null> {
+  assertPermission(actor, "notification.read");
+  const existing = await repo.findActionResult(actor.id, input.eventId);
+  if (existing) return toListItem(existing);
+  const failedUpload = input.outcome === "error" && /upload|file|evidence/i.test(input.message);
+  return notifyUser(actor.id, failedUpload ? "DOCUMENT_UPLOAD_FAILED" : "SYSTEM_ANNOUNCEMENT", {
+    title: input.outcome === "success" ? "Action completed" : "Action failed",
+    message: input.message,
+    priority: input.outcome === "error" ? "HIGH" : "LOW",
+    actionUrl: input.actionUrl,
+    forceEmail: true,
+    metadata: { eventId: input.eventId, outcome: input.outcome, source: "client_action" },
+  });
+}

@@ -58,7 +58,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "A document has been uploaded to the document repository.",
     defaultPriority: "MEDIUM",
     email: {
-      subject: "URS-DMS - Document uploaded",
+      subject: "URS-QA DMS - Document uploaded",
       body: "<p>A document has been uploaded to the URS document repository.</p>",
     },
   },
@@ -86,7 +86,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "A document has been approved.",
     defaultPriority: "MEDIUM",
     email: {
-      subject: "URS-DMS — Document approved",
+      subject: "URS-QA DMS — Document approved",
       body: "<p>Your document has been approved.</p>",
     },
   },
@@ -96,8 +96,8 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "A document has been rejected. Please review the decision note.",
     defaultPriority: "HIGH",
     email: {
-      subject: "URS-DMS — Document rejected",
-      body: "<p>A document has been rejected. Please review the decision note in URS-DMS.</p>",
+      subject: "URS-QA DMS — Document rejected",
+      body: "<p>A document has been rejected. Please review the decision note in URS-QA DMS.</p>",
     },
   },
   REQUEST_SUBMITTED: {
@@ -112,7 +112,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "Your document access request has been approved.",
     defaultPriority: "MEDIUM",
     email: {
-      subject: "URS-DMS — Request approved",
+      subject: "URS-QA DMS — Request approved",
       body: "<p>Your document access request has been approved.</p>",
     },
   },
@@ -122,7 +122,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "Your document access request has been rejected.",
     defaultPriority: "MEDIUM",
     email: {
-      subject: "URS-DMS — Request rejected",
+      subject: "URS-QA DMS — Request rejected",
       body: "<p>Your document access request has been rejected.</p>",
     },
   },
@@ -150,8 +150,8 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "A new AACCUP document submission is awaiting review.",
     defaultPriority: "MEDIUM",
     email: {
-      subject: "URS-DMS — Submission pending review",
-      body: "<p>A submission is awaiting review in URS-DMS.</p>",
+      subject: "URS-QA DMS — Submission pending review",
+      body: "<p>A submission is awaiting review in URS-QA DMS.</p>",
     },
   },
   AACCUP_SUBMISSION_WITHDRAWN: {
@@ -160,7 +160,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "A submitted document was withdrawn by its submitter.",
     defaultPriority: "HIGH",
     email: {
-      subject: "URS-DMS — Submission withdrawn",
+      subject: "URS-QA DMS — Submission withdrawn",
       body: "<p>A submitted document was withdrawn and is no longer active.</p>",
     },
   },
@@ -176,7 +176,7 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "An assigned task is approaching its deadline.",
     defaultPriority: "HIGH",
     email: {
-      subject: "URS-DMS — Task deadline approaching",
+      subject: "URS-QA DMS — Task deadline approaching",
       body: "<p>An assigned task is approaching its deadline.</p>",
     },
   },
@@ -198,8 +198,8 @@ export const NOTIFICATION_EVENTS: Record<NotificationType, NotificationEventSpec
     defaultMessage: "Your password has been changed. If this was not you, contact the administrator.",
     defaultPriority: "HIGH",
     email: {
-      subject: "URS-DMS — Password changed",
-      body: "<p>Your URS-DMS password has been changed. If this was not you, contact the administrator immediately.</p>",
+      subject: "URS-QA DMS — Password changed",
+      body: "<p>Your URS-QA DMS password has been changed. If this was not you, contact the administrator immediately.</p>",
     },
   },
   ROLE_CHANGED: {

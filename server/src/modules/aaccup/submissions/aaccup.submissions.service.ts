@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/config/constants";
 import { writeAudit } from "@/modules/audit/audit.service";
 import { notifyUser, notifyUsers } from "@/modules/notifications/notifications.service";
-import { sendEmail } from "@/modules/email/email.service";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/utils/errors";
 import { streamZipArchive } from "@/lib/zipStream";
 import { buildExportPlan } from "@/modules/aaccup/submissions/aaccup.export-plan";
@@ -258,13 +257,17 @@ async function assertTaskUsable(
   taskId: string | null | undefined,
   requirementId: string,
   areaId: string,
+  actor: Actor,
 ): Promise<void> {
   if (!taskId) return;
   const task = await prisma.aaccupTask.findFirst({
     where: { id: taskId, deletedAt: null },
-    select: { areaId: true, status: true, requirementId: true },
+    select: { areaId: true, status: true, requirementId: true, assigneeType: true, assigneeId: true },
   });
   if (!task) throw new BadRequestError("Referenced AACCUP task not found");
+  const user = await prisma.user.findUnique({ where: { id: actor.id }, select: { departmentId: true } });
+  const assigned = task.assigneeType === "USER" ? task.assigneeId === actor.id : Boolean(user?.departmentId && task.assigneeId === user.departmentId);
+  if (!assigned && !isManager(actor)) throw new ForbiddenError("Only an assignee or manager can submit work for this task");
   if (task.areaId !== areaId) {
     throw new BadRequestError("Task does not belong to the submission's area");
   }
@@ -485,7 +488,11 @@ export async function createSubmission(
   ]);
   assertDocumentBelongsToAreaDepartment(document, requirement);
   await assertDynamicRules(requirement, document);
-  await assertTaskUsable(input.taskId, input.requirementId, requirement.area.id);
+  await assertTaskUsable(input.taskId, input.requirementId, requirement.area.id, actor);
+  const previous = await prisma.aaccupSubmission.findFirst({
+    where: { requirementId: input.requirementId, submittedBy: actor.id, taskId: input.taskId ?? null, deletedAt: null },
+    orderBy: { submittedAt: "desc" }, select: { id: true },
+  });
 
   // Create the submission + demote any prior "current" submissions for this
   // requirement in a single transaction so history is preserved but exactly
@@ -493,6 +500,20 @@ export async function createSubmission(
   // filed into the area's archive folder (created lazily) in the same
   // transaction.
   const submission = await prisma.$transaction(async (tx) => {
+    if (input.taskId) {
+      const task = await tx.aaccupTask.updateMany({
+        where: { id: input.taskId, deletedAt: null, status: { in: ["OPEN", "IN_PROGRESS"] } },
+        data: { status: "IN_PROGRESS", completedAt: null, updatedBy: actor.id },
+      });
+      if (task.count !== 1) throw new ConflictError("This task is closed. Refresh your tasks before submitting.");
+      const active = await tx.aaccupSubmission.findFirst({
+        where: { taskId: input.taskId, submittedBy: actor.id, deletedAt: null },
+        orderBy: [{ submittedAt: "desc" }, { id: "desc" }], select: { status: true },
+      });
+      if (active && ["PENDING", "APPROVED", "NEEDS_REVISION"].includes(active.status)) {
+        throw new ConflictError("Unsubmit your current work before uploading a replacement.");
+      }
+    }
     const created = await tx.aaccupSubmission.create({
       data: {
         requirementId: input.requirementId,
@@ -557,13 +578,13 @@ export async function createSubmission(
 
   // Rule 19: alert every reviewer (aaccup.submission.review / aaccup.manage)
   // that a new submission awaits their action (best-effort, once).
-  await safeNotifyReviewers(detail);
+  await safeNotifyReviewers(detail, Boolean(previous));
 
   return detail;
 }
 
 /** Best-effort "new submission awaits review" notification — never fails creation. */
-async function safeNotifyReviewers(detail: AaccupSubmissionDetail): Promise<void> {
+async function safeNotifyReviewers(detail: AaccupSubmissionDetail, resubmitted = false): Promise<void> {
   try {
     const reviewers = await prisma.user.findMany({
       where: {
@@ -584,23 +605,16 @@ async function safeNotifyReviewers(detail: AaccupSubmissionDetail): Promise<void
       reviewers.map((reviewer) => reviewer.id),
       "AACCUP_SUBMISSION_PENDING_REVIEW",
       {
-        title: "New submission pending review",
-        message: `"${detail.documentTitle}" (${detail.areaName}) was submitted and is awaiting your review.`,
+        title: resubmitted ? "Updated work requires approval" : "New submission pending review",
+        message: `${detail.submittedByName} ${resubmitted ? "resubmitted" : "submitted"} "${detail.documentTitle}"${detail.taskTitle ? ` for task "${detail.taskTitle}"` : ""} (${detail.areaName}). Please review and approve this version.`,
+        forceEmail: true,
+        metadata: { taskId: detail.taskId, resubmitted },
         entity: "aaccup_submission",
         entityId: detail.id,
         // Contextual destination: the reviewer lands on the submissions view of
         // the originating set (AACCUP / ISO / CERT), oldest submissions first.
         actionUrl: `/aaccup?tab=submissions&areaSet=${encodeURIComponent(detail.areaSet)}`,
       },
-    );
-    await Promise.allSettled(
-      reviewers.map((reviewer) =>
-        sendEmail({
-          to: reviewer.email,
-          subject: "URS-DMS — Submission pending review",
-          body: `<p><strong>${detail.documentTitle}</strong> (${detail.areaName}) was submitted and is awaiting your review.</p>`,
-        }),
-      ),
     );
   } catch {
     // notifications must never break the submission flow
@@ -625,27 +639,19 @@ async function safeNotifyReviewersOfWithdrawal(detail: AaccupSubmissionDetail): 
       select: { id: true, email: true },
     });
     if (reviewers.length === 0) return;
-    const message = `"${detail.documentTitle}" (${detail.areaName}) was withdrawn by the submitter${detail.status === "WITHDRAWN" && detail.withdrawalReason ? `: ${detail.withdrawalReason}` : "."}`;
+    const message = `${detail.submittedByName} unsubmitted "${detail.documentTitle}"${detail.taskTitle ? ` for task "${detail.taskTitle}"` : ""} (${detail.areaName})${detail.withdrawalReason ? `: ${detail.withdrawalReason}` : "."} Any previous approval no longer applies.`;
     await notifyUsers(
       reviewers.map((reviewer) => reviewer.id),
       "AACCUP_SUBMISSION_WITHDRAWN",
       {
-        title: "Submission withdrawn",
+        title: "Work unsubmitted",
         message,
+        forceEmail: true,
         entity: "aaccup_submission",
         entityId: detail.id,
         actionUrl: `/aaccup?tab=submissions&areaSet=${encodeURIComponent(detail.areaSet)}`,
-        metadata: { withdrawnAt: detail.withdrawnAt?.toISOString() ?? null },
+        metadata: { withdrawnAt: detail.withdrawnAt?.toISOString() ?? null, taskId: detail.taskId },
       },
-    );
-    await Promise.allSettled(
-      reviewers.map((reviewer) =>
-        sendEmail({
-          to: reviewer.email,
-          subject: "URS-DMS — Submission withdrawn",
-          body: `<p><strong>${detail.documentTitle}</strong> (${detail.areaName}) was withdrawn by the submitter.</p><p>Please review the updated submission status in URS-DMS.</p>`,
-        }),
-      ),
     );
   } catch {
     // notifications must never break the unsubmit operation
@@ -697,7 +703,22 @@ export async function unsubmitSubmission(
     throw new ConflictError("Only pending, approved, or returned submissions can be unsubmitted");
   }
 
-  const withdrawn = await repo.withdraw(id, input.reason?.trim() || null);
+  if (existing.submittedById !== actor.id) throw new ForbiddenError("You can only unsubmit your own work");
+  if (input.taskId && input.taskId !== existing.taskId) {
+    if (existing.taskId) throw new BadRequestError("The submission belongs to a different task");
+    const task = await prisma.aaccupTask.findFirst({ where: { id: input.taskId, deletedAt: null }, select: { requirementId: true, assigneeType: true, assigneeId: true } });
+    const user = await prisma.user.findUnique({ where: { id: actor.id }, select: { departmentId: true } });
+    const assigned = task && (task.assigneeType === "USER" ? task.assigneeId === actor.id : Boolean(user?.departmentId && task.assigneeId === user.departmentId));
+    if (!task || task.requirementId !== existing.requirementId || (!assigned && !isManager(actor))) {
+      throw new ForbiddenError("This evidence cannot be linked to the selected task");
+    }
+  }
+  const latest = await prisma.aaccupSubmission.findFirst({
+    where: { requirementId: existing.requirementId, submittedBy: actor.id, taskId: existing.taskId, deletedAt: null },
+    orderBy: [{ submittedAt: "desc" }, { id: "desc" }], select: { id: true },
+  });
+  if (latest?.id !== id) throw new ConflictError("This work has already been replaced. Open your latest submission.");
+  const withdrawn = await repo.withdraw(id, input.reason?.trim() || null, existing.updatedAt, actor.id, input.taskId);
 
   await writeAudit({
     action: AUDIT_ACTIONS.AACCUP_SUBMISSION_WITHDRAWN,
@@ -745,7 +766,7 @@ export async function reviewSubmission(
   if (!existing) throw new NotFoundError("AACCUP submission not found");
 
   // Status-transition validation.
-  if (existing.status === "APPROVED" || existing.status === "REJECTED") {
+  if (!["PENDING", "NEEDS_REVISION"].includes(existing.status)) {
     throw new ConflictError(
       `Submission is already ${existing.status.toLowerCase()} — review is closed`,
     );
@@ -765,8 +786,8 @@ export async function reviewSubmission(
       actor,
       tx,
     );
-    const row = await tx.aaccupSubmission.update({
-      where: { id },
+    const changed = await tx.aaccupSubmission.updateMany({
+      where: { id, updatedAt: existing.updatedAt, deletedAt: null, status: { in: ["PENDING", "NEEDS_REVISION"] } },
       data: {
         status: input.decision,
         reviewedBy: actor.id,
@@ -778,6 +799,14 @@ export async function reviewSubmission(
         isCurrent: input.decision === "APPROVED" ? true : existing.isCurrent,
       },
     });
+    if (changed.count !== 1) throw new ConflictError("This submission changed or was unsubmitted. Refresh before reviewing it.");
+    const row = await tx.aaccupSubmission.findUniqueOrThrow({ where: { id } });
+    if (existing.taskId && input.decision === "APPROVED") {
+      await tx.aaccupTask.updateMany({
+        where: { id: existing.taskId, deletedAt: null, status: { not: "CANCELLED" } },
+        data: { status: "COMPLETED", completedAt: new Date(), updatedBy: actor.id },
+      });
+    }
     if (input.decision === "APPROVED" && row.isCurrent) {
       await tx.aaccupSubmission.updateMany({
         where: {

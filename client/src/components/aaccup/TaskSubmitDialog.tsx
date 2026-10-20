@@ -83,7 +83,9 @@ export function TaskSubmitDialog({ task, onClose, onSubmitted }: TaskSubmitDialo
       }
       const validation = await validateOnlineRequirementUpload(input)
       if (!validation.valid) {
-        setValidationMessages(validation.errors.map((issue) => issue.message))
+        const messages = validation.errors.map((issue) => issue.message)
+        setValidationMessages(messages)
+        toast.error(`Evidence upload failed: ${messages.join(" ")}`)
         return
       }
       if (validation.warnings.length > 0) {
@@ -106,9 +108,10 @@ export function TaskSubmitDialog({ task, onClose, onSubmitted }: TaskSubmitDialo
     <Dialog open={Boolean(task)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Submit Evidence</DialogTitle>
+          <DialogTitle>{task?.mySubmission ? "Resubmit Evidence" : "Submit Evidence"}</DialogTitle>
           <DialogDescription>
             {task?.title} ({task?.requirementCode})
+            {task?.mySubmission && " — This version will need a new admin approval."}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[68vh] space-y-4 overflow-y-auto py-3">

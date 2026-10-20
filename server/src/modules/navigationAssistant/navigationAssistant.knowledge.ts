@@ -67,7 +67,7 @@ export function navigationKnowledgeFor(audience: NavigationAudience): string {
 export function roleBoundaryResponse(audience: NavigationAudience, message: string): string | null {
   const normalized = message.toLowerCase();
   if (/essay|president|python|write.*code|payroll|reveal.*(api key|secret)|ignore.*(previous|system|role).*instruction/.test(normalized)) {
-    return "I can only help with navigating and using URS-DMS features.";
+    return "I can only help with navigating and using URS-QA DMS features.";
   }
   if (audience === "USER" && /user management|manage users|add (a|another )?user|reset .*user.*password/.test(normalized)) {
     return "User Management is available only to authorized Admin or Root accounts. I cannot provide access instructions for it from the User portal.";

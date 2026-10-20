@@ -1347,6 +1347,7 @@ export async function verifyUpload(
 
   // Rule 19: upload-completed notification (backend-authoritative, single write).
   await safeNotify(actor.id, "DOCUMENT_UPLOADED", {
+    forceEmail: true,
     title: "Upload completed",
     message: `"${doc.title}" was uploaded successfully.`,
     entity: "document",
@@ -1386,6 +1387,7 @@ async function recordUploadFailure(
     userAgent: actor.userAgent,
   });
   await safeNotify(actor.id, "DOCUMENT_UPLOAD_FAILED", {
+    forceEmail: true,
     title: "Upload failed",
     message: `"${doc.title}" could not be verified (${reason}). Please retry.`,
     entity: "document",

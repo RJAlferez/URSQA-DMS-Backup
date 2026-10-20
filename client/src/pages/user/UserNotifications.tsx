@@ -81,7 +81,12 @@ export default function UserNotifications() {
     } finally { setLoading(false) }
   }, [user])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    const onUpdate = () => { void refresh() }
+    onUpdate()
+    window.addEventListener("urs:notifications-updated", onUpdate)
+    return () => window.removeEventListener("urs:notifications-updated", onUpdate)
+  }, [refresh])
 
   const unreadCount = notifs.filter((n) => !n.read).length
 

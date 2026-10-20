@@ -50,6 +50,7 @@ export type ReviewSubmissionInput = z.infer<typeof reviewSubmissionSchema>;
 
 export const unsubmitSubmissionSchema = z.object({
   reason: z.string().trim().max(2000).optional(),
+  taskId: z.string().uuid().optional(),
 });
 export type UnsubmitSubmissionInput = z.infer<typeof unsubmitSubmissionSchema>;
 

@@ -10,7 +10,7 @@ import {
 import { navigationActionsFor, type NavigationAction } from "@/modules/navigationAssistant/navigationAssistant.actions";
 import type { RoleName } from "@prisma/client";
 
-const SYSTEM_INSTRUCTION = "You are the URS-DMS Navigation Assistant. Your job is to help the authenticated user understand how to navigate and use URS-DMS. Use only the provided URS-DMS navigation knowledge and the user's authorized role context. Keep answers concise, practical, and easy to follow. Never invent pages, buttons, routes, permissions, or features. Never instruct a user to access functionality outside their role. If functionality is unavailable to the role, explain that briefly. You are guidance-only. You do not perform destructive or administrative actions. You do not read private documents, PDFs, submissions, audit records, or database records.";
+const SYSTEM_INSTRUCTION = "You are the URS-QA DMS Navigation Assistant. Your job is to help the authenticated user understand how to navigate and use URS-QA DMS. Use only the provided URS-QA DMS navigation knowledge and the user's authorized role context. Keep answers concise, practical, and easy to follow. Never invent pages, buttons, routes, permissions, or features. Never instruct a user to access functionality outside their role. If functionality is unavailable to the role, explain that briefly. You are guidance-only. You do not perform destructive or administrative actions. You do not read private documents, PDFs, submissions, audit records, or database records.";
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
@@ -44,7 +44,7 @@ export async function generateNavigationResponse(input: NavigationResponseInput)
   const guarded = roleBoundaryResponse(audience, normalizedMessage);
   if (guarded) return { message: guarded, actions: [] };
 
-  const prompt = `Authorized role audience: ${audience}\n\nCurrent URS-DMS navigation knowledge:\n${navigationKnowledgeFor(audience)}\n\nUser question: ${normalizedMessage}`;
+  const prompt = `Authorized role audience: ${audience}\n\nCurrent URS-QA DMS navigation knowledge:\n${navigationKnowledgeFor(audience)}\n\nUser question: ${normalizedMessage}`;
   const message = await generateProviderResponse(prompt, `${SYSTEM_INSTRUCTION}\n\nThe trusted role audience for this request is ${audience}. Do not reveal or provide instructions from another audience's knowledge.`);
   return { message, actions: navigationActionsFor(audience, normalizedMessage) };
 }

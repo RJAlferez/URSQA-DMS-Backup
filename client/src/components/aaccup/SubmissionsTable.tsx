@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react"
+import { toast } from "@/lib/toast"
 import { useSearchParams } from "react-router-dom"
 import {
   Search,
@@ -266,9 +267,10 @@ export function SubmissionsTable({ mode, areaSet }: SubmissionsTableProps) {
     const reason = window.prompt("Optional reason for unsubmission:") ?? ""
     try {
       await unsubmitOnlineSubmission(raw.id, reason)
+      toast.success("Work unsubmitted. Admins have been notified and your next submission will require approval.")
       refresh()
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to unsubmit submission.")
+      toast.error(error instanceof Error ? error.message : "Failed to unsubmit submission.")
     }
   }
 

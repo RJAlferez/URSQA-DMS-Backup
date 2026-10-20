@@ -1,5 +1,6 @@
 import { API_BASE, apiGet, apiGetPage, apiPost, apiPatch, apiDelete, getAccessToken } from "@/lib/http"
 import { sha256 as sha256Buffer } from "@/lib/sha256"
+import { recordClientAction } from "@/lib/actionFeedback"
 import type { Document, DocumentStatus } from "@/types/domain"
 
 interface OnlineDocumentRow {
@@ -398,6 +399,11 @@ function putObjectWithXhr(
   )
   const xhr = new XMLHttpRequest()
   const done = new Promise<void>((resolve, reject) => {
+    const failed = (reason: string) => {
+      const message = `${reason}: ${file.name}`
+      recordClientAction("error", message)
+      reject(new Error(message))
+    }
     xhr.open("PUT", version.upload.url)
     for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value)
     xhr.upload.onprogress = (event) => {
@@ -405,10 +411,10 @@ function putObjectWithXhr(
     }
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve()
-      else reject(new Error(`Object upload failed (${xhr.status})`))
+      else failed(`File upload failed (${xhr.status})`)
     }
-    xhr.onerror = () => reject(new Error("Object upload failed (network error)"))
-    xhr.onabort = () => reject(new Error("Upload canceled"))
+    xhr.onerror = () => failed("File upload failed (network error)")
+    xhr.onabort = () => failed("File upload canceled")
     xhr.send(file)
   })
   return { xhr, done }

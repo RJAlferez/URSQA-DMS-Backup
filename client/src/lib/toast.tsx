@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react"
+import { captureActionToast } from "@/lib/actionFeedback"
 import { CheckCircle, AlertTriangle, Info, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
@@ -29,9 +30,12 @@ class ToastStore {
     this.listeners.forEach((l) => l(this.toasts))
   }
 
-  add(toast: Omit<ToastMessage, "id">): string {
+  add(toast: Omit<ToastMessage, "id">, report = true): string {
+    const duplicate = this.toasts.find((item) => item.type === toast.type && item.message === toast.message)
+    if (duplicate) return duplicate.id
+    if (report && (toast.type === "success" || toast.type === "error")) captureActionToast(toast.type, toast.message)
     const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    const item: ToastMessage = { id, duration: toast.type === "success" ? 1000 : 4000, ...toast }
+    const item: ToastMessage = { ...toast, id, duration: toast.duration ?? (toast.type === "error" ? 7000 : 4000) }
     this.toasts = [...this.toasts, item]
     this.emit()
     if (item.duration && item.duration > 0) {
@@ -46,7 +50,7 @@ class ToastStore {
   }
 
   success(message: string, duration?: number) {
-    return this.add({ type: "success", message, duration: duration ?? 1000 })
+    return this.add({ type: "success", message, duration: duration ?? 4000 })
   }
   error(message: string, duration?: number) {
     return this.add({ type: "error", message, duration })
@@ -123,6 +127,7 @@ export function ToastContainer() {
         return (
           <div
             key={t.id}
+            role={t.type === "error" ? "alert" : "status"}
             className={cn(
               "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-lg animate-in slide-in-from-bottom-2",
               adminToast && "admin-toast",
